@@ -19,19 +19,28 @@ enum Gir2SwiftError: LocalizedError {
 /// - Parameter manifest: Manifest path to inspect.
 /// - Returns: GIR name declared in `manifest`.
 /// - Throws: ``Gir2SwiftError/failedToGetGirNameFromManifest`` when the manifest does not declare a GIR name.
+struct ManifestError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
 func getGirName(for manifest: Path) throws -> String {
-    let lines = try String(contentsOf: URL(fileURLWithPath: manifest.string)).split(separator: "\n")
+    guard FileManager.default.fileExists(atPath: manifest.string) else {
+        throw ManifestError(message: "Manifest does not exist at: \(manifest.string)")
+    }
+    let contents = try String(contentsOf: URL(fileURLWithPath: manifest.string))
+    let lines = contents.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n")
     var girName: String? = nil
     for line in lines {
-        if line.hasPrefix("gir-name: ") {
-            girName = line.dropFirst(10).trimmingCharacters(in: .whitespacesAndNewlines)
+        if line.hasPrefix("gir-name:") {
+            girName = line.dropFirst("gir-name:".count).trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
     if let girName = girName {
         return girName
     } else {
-        throw Gir2SwiftError.failedToGetGirNameFromManifest
+        throw ManifestError(message: "No 'gir-name: ' line in \(manifest.string); contents (\(contents.count) chars): \(contents.prefix(500))")
     }
 }
 
@@ -61,7 +70,17 @@ func girManifestName(for target: Target, in targetPackageDirectory: Path) -> Pat
 /// - Returns: Directory path containing every file in `girFiles`.
 /// - Throws: ``Gir2SwiftError/failedToGetGirDirectory(containing:)`` when no common directory can be found.
 func getGirDirectory(containing girFiles: [String]) throws -> Path {
-    let possibleDirectories = ["/opt/homebrew/share/gir-1.0", "/usr/local/share/gir-1.0", "/usr/share/gir-1.0"].map(Path.init(_:))
+    var candidates: [String] = []
+    if let extra = ProcessInfo.processInfo.environment["GIR_EXTRA_SEARCH_PATH"], !extra.isEmpty {
+        #if os(Windows)
+        let sep: Character = ";"
+        #else
+        let sep: Character = ":"
+        #endif
+        candidates += extra.split(separator: sep).map(String.init)
+    }
+    candidates += ["/opt/homebrew/share/gir-1.0", "/usr/local/share/gir-1.0", "/usr/share/gir-1.0"]
+    let possibleDirectories = candidates.map(Path.init(_:))
     for directory in possibleDirectories {
         let directoryContainsAllGirs = girFiles.allSatisfy { file in
             let path = directory.appending(file).string

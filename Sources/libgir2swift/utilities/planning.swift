@@ -155,8 +155,20 @@ struct Plan {
     private static func searchForGir(named name: String, pkgConfig: Set<String>) throws -> URL? {
         // Common locations of `.gir` files on different platforms
         let defaultPaths = ["/opt/homebrew/share/gir-1.0", "/usr/local/share/gir-1.0", "/usr/share/gir-1.0"].map { URL(fileURLWithPath: $0, isDirectory: false) }
-        
-        var searchPaths = defaultPaths
+
+        let extraPaths: [URL]
+        if let extra = ProcessInfo.processInfo.environment["GIR_EXTRA_SEARCH_PATH"], !extra.isEmpty {
+            #if os(Windows)
+            let sep: Character = ";"
+            #else
+            let sep: Character = ":"
+            #endif
+            extraPaths = extra.split(separator: sep).map { URL(fileURLWithPath: String($0), isDirectory: true) }
+        } else {
+            extraPaths = []
+        }
+
+        var searchPaths = extraPaths + defaultPaths
         #if os(macOS)
         // Path relative to the `libdir` variable of the package, where the `.gir` files are commonly located. This path is arbitrary!
         let homebrewRelativeGirLocation = "../share/gir-1.0/"
@@ -176,7 +188,7 @@ struct Plan {
             }
         }
 
-        searchPaths = homebrewPaths + defaultPaths
+        searchPaths = extraPaths + homebrewPaths + defaultPaths
         #endif
 
         // After all search paths are determined, we search for the first appearance of a `.gir` file with corresponding name.

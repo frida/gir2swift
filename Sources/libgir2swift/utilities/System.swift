@@ -20,9 +20,18 @@ enum ProcessError: Error {
 
 private extension ProcessInfo {
     var environmentPaths: [String]? {
-        environment["PATH"].flatMap { $0.split(separator: ":", omittingEmptySubsequences: true) }?.map(String.init)
+        #if os(Windows)
+        let separator: Character = ";"
+        #else
+        let separator: Character = ":"
+        #endif
+        return environment["PATH"].flatMap { $0.split(separator: separator, omittingEmptySubsequences: true) }?.map(String.init)
     }
 }
+
+#if os(Windows)
+private let windowsExecutableExtensions = ["", ".exe", ".cmd", ".bat", ".com"]
+#endif
 
 /// A structure representing a shell comand and its arguments
 struct CommandArguments {
@@ -56,14 +65,22 @@ func urlForExecutable(named executable: String, in path: [String] = ProcessInfo.
             return URL(fileURLWithPath: d)
         }
     }) {
+        #if os(Windows)
+        for ext in windowsExecutableExtensions {
+            let file = url.appendingPathComponent(executable + ext, isDirectory: false)
+            if fm.fileExists(atPath: file.path) {
+                return file
+            }
+        }
+        #elseif os(macOS)
         let file = url.appendingPathComponent(executable, isDirectory: false)
-        #if os(macOS)
         var directory = ObjCBool(false)
         if fm.fileExists(atPath: file.path, isDirectory: &directory), !directory.boolValue,
            fm.isExecutableFile(atPath: file.path) {
             return file
         }
         #else
+        let file = url.appendingPathComponent(executable, isDirectory: false)
         if fm.isExecutableFile(atPath: file.path) {
             return file
         }

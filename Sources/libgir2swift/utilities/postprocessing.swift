@@ -121,15 +121,24 @@ func postProcess(_ node: String, for targetDirectoryURL: URL, pkgConfigName: Str
                 p.fileHandleForWriting.closeFile()
             }
         }
+        var failedOutputs: Set<String> = []
+        var openHandles: [FileHandle] = []
         let pipes = outputFiles.flatMap { (f: String) -> [Process] in
             let o = f + ".out"
             guard let inFile = FileHandle(forReadingAtPath: f),
                   fm.createFile(atPath: o, contents: nil, attributes: nil),
-                  let outFile = FileHandle(forWritingAtPath: o) else { return [] }
+                  let outFile = FileHandle(forWritingAtPath: o) else {
+                failedOutputs.insert(f)
+                return []
+            }
+            openHandles.append(inFile)
+            openHandles.append(outFile)
             do {
                 return try pipe(pipeCommands, input: inFile, output: outFile)
             } catch {
                 perror("Cannot post-process \(f)")
+                try? fm.removeItem(atPath: o)
+                failedOutputs.insert(f)
                 return []
             }
         }
@@ -160,18 +169,16 @@ func postProcess(_ node: String, for targetDirectoryURL: URL, pkgConfigName: Str
             inputFileProcesses = []
         }
         processes.forEach { $0.waitUntilExit() }
+        openHandles.forEach { $0.closeFile() }
         outputFiles.forEach {
             let o = $0 + ".out"
+            guard !failedOutputs.contains($0) else { return }
             do {
-                try fm.removeItem(atPath: $0)
+                let data = try Data(contentsOf: URL(fileURLWithPath: o))
+                try data.write(to: URL(fileURLWithPath: $0))
+                try? fm.removeItem(atPath: o)
             } catch {
-                print("Cannot remove '\($0)': \(error)", to: &Streams.stdErr)
-            }
-            do {
-                try? fm.removeItem(atPath: $0)
-                try fm.moveItem(atPath: o, toPath: $0)
-            } catch {
-                print("Cannot move '\(o)' to '\($0)': \(error)", to: &Streams.stdErr)
+                print("Cannot replace '\($0)' from '\(o)': \(error)", to: &Streams.stdErr)
             }
         }
         inputFileProcesses.forEach { $0.waitUntilExit() }
