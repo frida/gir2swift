@@ -29,11 +29,11 @@ func getGirName(for manifest: Path) throws -> String {
         throw ManifestError(message: "Manifest does not exist at: \(manifest.string)")
     }
     let contents = try String(contentsOf: URL(fileURLWithPath: manifest.string))
-    let lines = contents.split(separator: "\n")
+    let lines = contents.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n")
     var girName: String? = nil
     for line in lines {
-        if line.hasPrefix("gir-name: ") {
-            girName = line.dropFirst(10).trimmingCharacters(in: .whitespacesAndNewlines)
+        if line.hasPrefix("gir-name:") {
+            girName = line.dropFirst("gir-name:".count).trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
