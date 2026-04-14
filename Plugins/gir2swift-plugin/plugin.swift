@@ -19,14 +19,16 @@ enum Gir2SwiftError: LocalizedError {
 /// - Parameter manifest: Manifest path to inspect.
 /// - Returns: GIR name declared in `manifest`.
 /// - Throws: ``Gir2SwiftError/failedToGetGirNameFromManifest`` when the manifest does not declare a GIR name.
+struct ManifestError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
 func getGirName(for manifest: Path) throws -> String {
-    FileHandle.standardError.write(Data("[gir2swift-plugin] Reading manifest: \(manifest.string)\n".utf8))
     guard FileManager.default.fileExists(atPath: manifest.string) else {
-        FileHandle.standardError.write(Data("[gir2swift-plugin] Manifest does not exist\n".utf8))
-        throw Gir2SwiftError.failedToGetGirNameFromManifest
+        throw ManifestError(message: "Manifest does not exist at: \(manifest.string)")
     }
     let contents = try String(contentsOf: URL(fileURLWithPath: manifest.string))
-    FileHandle.standardError.write(Data("[gir2swift-plugin] Manifest contents (\(contents.count) chars):\n\(contents)\n".utf8))
     let lines = contents.split(separator: "\n")
     var girName: String? = nil
     for line in lines {
@@ -38,8 +40,7 @@ func getGirName(for manifest: Path) throws -> String {
     if let girName = girName {
         return girName
     } else {
-        FileHandle.standardError.write(Data("[gir2swift-plugin] No gir-name line found\n".utf8))
-        throw Gir2SwiftError.failedToGetGirNameFromManifest
+        throw ManifestError(message: "No 'gir-name: ' line in \(manifest.string); contents (\(contents.count) chars): \(contents.prefix(500))")
     }
 }
 
