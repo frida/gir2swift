@@ -20,7 +20,14 @@ enum Gir2SwiftError: LocalizedError {
 /// - Returns: GIR name declared in `manifest`.
 /// - Throws: ``Gir2SwiftError/failedToGetGirNameFromManifest`` when the manifest does not declare a GIR name.
 func getGirName(for manifest: Path) throws -> String {
-    let lines = try String(contentsOf: URL(fileURLWithPath: manifest.string)).split(separator: "\n")
+    FileHandle.standardError.write(Data("[gir2swift-plugin] Reading manifest: \(manifest.string)\n".utf8))
+    guard FileManager.default.fileExists(atPath: manifest.string) else {
+        FileHandle.standardError.write(Data("[gir2swift-plugin] Manifest does not exist\n".utf8))
+        throw Gir2SwiftError.failedToGetGirNameFromManifest
+    }
+    let contents = try String(contentsOf: URL(fileURLWithPath: manifest.string))
+    FileHandle.standardError.write(Data("[gir2swift-plugin] Manifest contents (\(contents.count) chars):\n\(contents)\n".utf8))
+    let lines = contents.split(separator: "\n")
     var girName: String? = nil
     for line in lines {
         if line.hasPrefix("gir-name: ") {
@@ -31,6 +38,7 @@ func getGirName(for manifest: Path) throws -> String {
     if let girName = girName {
         return girName
     } else {
+        FileHandle.standardError.write(Data("[gir2swift-plugin] No gir-name line found\n".utf8))
         throw Gir2SwiftError.failedToGetGirNameFromManifest
     }
 }
@@ -61,7 +69,17 @@ func girManifestName(for target: Target, in targetPackageDirectory: Path) -> Pat
 /// - Returns: Directory path containing every file in `girFiles`.
 /// - Throws: ``Gir2SwiftError/failedToGetGirDirectory(containing:)`` when no common directory can be found.
 func getGirDirectory(containing girFiles: [String]) throws -> Path {
-    let possibleDirectories = ["/opt/homebrew/share/gir-1.0", "/usr/local/share/gir-1.0", "/usr/share/gir-1.0"].map(Path.init(_:))
+    var candidates: [String] = []
+    if let extra = ProcessInfo.processInfo.environment["GIR_EXTRA_SEARCH_PATH"], !extra.isEmpty {
+        #if os(Windows)
+        let sep: Character = ";"
+        #else
+        let sep: Character = ":"
+        #endif
+        candidates += extra.split(separator: sep).map(String.init)
+    }
+    candidates += ["/opt/homebrew/share/gir-1.0", "/usr/local/share/gir-1.0", "/usr/share/gir-1.0"]
+    let possibleDirectories = candidates.map(Path.init(_:))
     for directory in possibleDirectories {
         let directoryContainsAllGirs = girFiles.allSatisfy { file in
             let path = directory.appending(file).string
