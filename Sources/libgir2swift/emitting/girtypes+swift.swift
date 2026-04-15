@@ -320,6 +320,10 @@ public extension GIR.Method {
     func isFactoryOf(_ record: GIR.Record?) -> Bool {
         return !isDesignatedConstructor && isConstructorOf(record)
     }
+
+    var takesVaList: Bool {
+        args.contains { $0.typeRef.type.typeName == "va_list" }
+    }
 }
 
 /// Swift extension for arguments

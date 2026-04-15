@@ -668,6 +668,9 @@ public func methodCode(_ indentation: String, initialIndentation: String? = nil,
         guard !method.varargs else {
             return "\n\(indent)// *** \(name)() is not available because it has a varargs (...) parameter!\n\n"
         }
+        guard !method.takesVaList else {
+            return "\n\(indent)// *** \(name)() is currently not available because \(method.cname) takes a va_list pointer!\n\n"
+        }
         var hadInstance = false
         let arguments = method.args.filter {    // not .lazy !!!
             guard !hadInstance else {
@@ -938,15 +941,7 @@ public func convenienceConstructorCode(_ typeRef: TypeReference, indentation: St
                 fname = fullname
             }
             let arguments = method.args
-            var vaList = false
-            for argument in arguments {
-                if !isExtension && argument.typeRef.type.typeName == "va_list" {
-                    vaList = true
-                    break
-                }
-            }
-            guard !vaList else {
-                // FIXME: as of Swift 5.3 beta, generating static class methods with va_list crashes the compiler
+            guard !method.takesVaList else {
                 return "\n\(indentation)// *** \(name)() is currently not available because \(method.cname) takes a va_list pointer!\n\n"
             }
             let templateTypes = Set(arguments.compactMap(\.templateDecl)).sorted().joined(separator: ", ")
