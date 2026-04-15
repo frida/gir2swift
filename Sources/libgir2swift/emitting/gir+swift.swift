@@ -1390,8 +1390,8 @@ public func convertSetterArgumentToSwiftFor(_ record: GIR.Record?, ptr: String =
             exp = arg.isNullable || arg.isOptional ? "newValue?.value ?? 0" : "newValue.value"
             sourceRef = paramRef
         } else if let propertySource = propertySource,
-                  needsOuterPointerMutationCast(from: propertySource, to: ref) {
-            return "UnsafeMutablePointer(mutating: newValue)"
+                  let castExpression = propertySetterBridgeCast(from: propertySource, to: ref) {
+            return castExpression
         } else {
             exp = "newValue"
             sourceRef = paramRef
@@ -1401,18 +1401,36 @@ public func convertSetterArgumentToSwiftFor(_ record: GIR.Record?, ptr: String =
     }
 }
 
-/// Whether the setter argument's Swift type differs from the property's public
-/// Swift type only in the outermost pointer mutability, requiring a
-/// `UnsafeMutablePointer(mutating:)` cast to bridge them.
+/// Cast expression that bridges the property's public Swift type (derived from
+/// the getter's return type) to the setter's C argument type when they differ
+/// only in pointer mutability.
+///
+/// Two cases surface:
+/// * Outermost pointer differs only in mutability (inner type identical) —
+///   `UnsafeMutablePointer(mutating:)` handles the conversion.
+/// * Any deeper mismatch in the nested pointer spelling — bridge through
+///   `OpaquePointer`, which preserves the runtime representation.
 @inlinable
-func needsOuterPointerMutationCast(from source: TypeReference, to target: TypeReference) -> Bool {
+func propertySetterBridgeCast(from source: TypeReference, to target: TypeReference) -> String? {
     let sourceName = source.fullTypeName
     let targetName = target.fullTypeName
-    guard sourceName != targetName else { return false }
+    guard sourceName != targetName else { return nil }
     let constPrefix = "UnsafePointer<"
     let mutablePrefix = "UnsafeMutablePointer<"
-    guard sourceName.hasPrefix(constPrefix), targetName.hasPrefix(mutablePrefix) else { return false }
-    return sourceName.dropFirst(constPrefix.count) == targetName.dropFirst(mutablePrefix.count)
+    let sourceIsPointer = sourceName.hasPrefix(constPrefix) || sourceName.hasPrefix(mutablePrefix)
+    let targetIsPointer = targetName.hasPrefix(constPrefix) || targetName.hasPrefix(mutablePrefix)
+    guard sourceIsPointer, targetIsPointer else { return nil }
+    if sourceName.hasPrefix(constPrefix), targetName.hasPrefix(mutablePrefix),
+       sourceName.dropFirst(constPrefix.count) == targetName.dropFirst(mutablePrefix.count) {
+        return "UnsafeMutablePointer(mutating: newValue)"
+    }
+    let targetType: String
+    if targetName.hasSuffix("!") || targetName.hasSuffix("?") {
+        targetType = String(targetName.dropLast())
+    } else {
+        targetType = targetName
+    }
+    return "newValue.map { \(targetType)(OpaquePointer($0)) }"
 }
 
 
