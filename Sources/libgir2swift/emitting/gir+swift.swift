@@ -1080,6 +1080,16 @@ public func functionCallCode(_ indentation: String, _ record: GIR.Record? = nil,
            ref.type.ctype != receiverType.ctype {
             return "UnsafeMutablePointer<\(ref.type.ctype.swift)>(OpaquePointer(_: \(varName)))"
         }
+        if !instance,
+           let knownRecord = arg.knownRecord,
+           !knownRecord.typeRef.type.ctype.isEmpty,
+           ref.type.ctype != knownRecord.typeRef.type.ctype {
+            let isOptional = arg.isNullable || arg.isOptional
+            if isOptional {
+                return "\(name).map { UnsafeMutablePointer<\(ref.type.ctype.swift)>(OpaquePointer(_: $0.\(knownRecord.ptrName))) }"
+            }
+            return "UnsafeMutablePointer<\(ref.type.ctype.swift)>(OpaquePointer(_: \(name).\(knownRecord.ptrName)))"
+        }
         let param = ref.cast(expression: varName, from: arg.swiftParamRef)
         return param
     }
@@ -1381,6 +1391,9 @@ public func convertSetterArgumentToSwiftFor(_ record: GIR.Record?, ptr: String =
         let sourceRef: TypeReference
         let exp: String
         if !arg.instance && !arg.isInstanceOf(record) && paramRef.knownIndirectionLevel == 1, let knownRecord = GIR.knownRecords[paramRef.type.prefixedName] ?? GIR.knownRecords[paramRef.type.name] {
+            if !knownRecord.typeRef.type.ctype.isEmpty, ref.type.ctype != knownRecord.typeRef.type.ctype {
+                return "newValue.map { UnsafeMutablePointer<\(ref.type.ctype.swift)>(OpaquePointer(_: $0.\(knownRecord.ptrName))) }"
+            }
             exp = "newValue?." + knownRecord.ptrName
             sourceRef = knownRecord.structRef
         } else if arg.instance || arg.isInstanceOf(record) {
