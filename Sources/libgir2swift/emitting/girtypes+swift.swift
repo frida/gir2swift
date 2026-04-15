@@ -313,7 +313,9 @@ public extension GIR.Method {
 
     /// return whether the method is a constructor of the given record
     func isConstructorOf(_ record: GIR.Record?) -> Bool {
-        return record != nil && returns.isInstanceOfHierarchy(record!) && !(args.first?.isInstanceOf(record) ?? false)
+        guard let record, returns.isInstanceOfHierarchy(record) else { return false }
+        if let first = args.first, first.instance || first.isInstanceOf(record) { return false }
+        return true
     }
 
     /// return whether the method is a factory of the given record
