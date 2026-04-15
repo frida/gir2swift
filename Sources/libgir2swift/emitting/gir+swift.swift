@@ -1074,6 +1074,11 @@ public func functionCallCode(_ indentation: String, _ record: GIR.Record? = nil,
         }
         let varName = instance ? record?.ptrName ?? ptr : (name + argPtrName)
         let ref = arg.typeRef
+        if instance,
+           let receiverType = record?.typeRef.type,
+           ref.type.ctype != receiverType.ctype {
+            return "UnsafeMutablePointer<\(ref.type.ctype.swift)>(OpaquePointer(_: \(varName)))"
+        }
         let param = ref.cast(expression: varName, from: arg.swiftParamRef)
         return param
     }
