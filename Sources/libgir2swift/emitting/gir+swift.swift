@@ -1582,6 +1582,22 @@ public func recordClassCode(_ e: GIR.Record, parent: String, indentation: String
     //    let ctypeRef = TypeReference.pointer(to: cGIRType)
     let parentType = e.parentType
     let hasParent = parentType != nil || !parent.isEmpty
+    // When a same-named ancestor has no methods or constructors of its own,
+    // the ancestor is effectively a typedef alias: the child's ctype resolves
+    // (via the C header's typedef) to the ancestor's, so the typed-pointer
+    // initialisers emitted below share a signature with the parent's and must
+    // be declared `override` to satisfy Swift.
+    let inheritsTypedefAlias: Bool = {
+        var ancestor = e.parentType
+        while let parent = ancestor {
+            if parent.name == e.name && parent.constructors.isEmpty && parent.methods.isEmpty && parent.functions.isEmpty {
+                return true
+            }
+            ancestor = parent.parentType
+        }
+        return false
+    }()
+    let typedPointerOverride = inheritsTypedefAlias ? "override " : ""
     let scode = signalNameCode(indentation: indentation)
     let ncode = signalNameCode(indentation: indentation, prefixes: ("notify", "notify::"))
     let ccode = convenienceConstructorCode(typeRef, indentation: indentation, override: "override ", hasParent: hasParent, shouldSink: true)(e)
@@ -1632,14 +1648,14 @@ public func recordClassCode(_ e: GIR.Record, parent: String, indentation: String
     "/// This creates an instance without performing an unbalanced retain\n" + indentation +
     "/// i.e., ownership is transferred to the `\(className)` instance.\n" + indentation +
     "/// - Parameter op: pointer to the underlying object\n" + indentation +
-    "@inlinable public init(_ op: UnsafeMutablePointer<\(ctype)>) {\n" + doubleIndentation +
+    "@inlinable \(typedPointerOverride)public init(_ op: UnsafeMutablePointer<\(ctype)>) {\n" + doubleIndentation +
     (hasParent ? "super.init(cPointer: op)\n" : "ptr = UnsafeMutableRawPointer(op)\n") + indentation +
     "}\n\n" + (indentation +
                "/// Designated initialiser from a constant pointer to the underlying `C` data type.\n" + indentation +
                "/// This creates an instance without performing an unbalanced retain\n" + indentation +
                "/// i.e., ownership is transferred to the ``\(className)`` instance.\n" + indentation +
                "/// - Parameter op: pointer to the underlying object\n" + indentation +
-               "@inlinable public init(_ op: UnsafePointer<\(ctype)>) {\n" + doubleIndentation +
+               "@inlinable \(typedPointerOverride)public init(_ op: UnsafePointer<\(ctype)>) {\n" + doubleIndentation +
                (hasParent ? "super.init(raw: UnsafeMutableRawPointer(UnsafeMutablePointer(mutating: op)))\n" : "ptr = UnsafeMutableRawPointer(UnsafeMutablePointer(mutating: op))\n") + indentation +
                "}\n\n") + (indentation +
                            "/// Optional initialiser from a non-mutating `" + GIR.gpointer + "` to\n" + indentation +
@@ -1667,7 +1683,7 @@ public func recordClassCode(_ e: GIR.Record, parent: String, indentation: String
                                                    "/// This creates an instance without performing an unbalanced retain\n" + indentation +
                                                    "/// i.e., ownership is transferred to the ``\(className)`` instance.\n" + indentation +
                                                    "/// - Parameter op: pointer to the underlying object\n" + indentation +
-                                                   "@inlinable public init!(_ op: UnsafePointer<\(ctype)>?) {\n" + doubleIndentation +
+                                                   "@inlinable \(typedPointerOverride)public init!(_ op: UnsafePointer<\(ctype)>?) {\n" + doubleIndentation +
                                                    "guard let p = UnsafeMutablePointer(mutating: op) else { return nil }\n" + doubleIndentation +
                                                    (hasParent ? "super.init(cPointer: p)\n" : "ptr = UnsafeMutableRawPointer(p)\n") + indentation +
                                                    "}\n\n") + (indentation +
@@ -1675,7 +1691,7 @@ public func recordClassCode(_ e: GIR.Record, parent: String, indentation: String
                                                                "/// This creates an instance without performing an unbalanced retain\n" + indentation +
                                                                "/// i.e., ownership is transferred to the ``\(className)`` instance.\n" + indentation +
                                                                "/// - Parameter op: pointer to the underlying object\n" + indentation +
-                                                               "@inlinable public init!(_ op: UnsafeMutablePointer<\(ctype)>?) {\n" + doubleIndentation +
+                                                               "@inlinable \(typedPointerOverride)public init!(_ op: UnsafeMutablePointer<\(ctype)>?) {\n" + doubleIndentation +
                                                                "guard let p = op else { return nil }\n" + doubleIndentation +
                                                                (hasParent ? "super.init(cPointer: p)\n" : "ptr = UnsafeMutableRawPointer(p)\n") + indentation +
                                                                "}\n\n") + (indentation +
@@ -1684,7 +1700,7 @@ public func recordClassCode(_ e: GIR.Record, parent: String, indentation: String
                                                                            "/// \(e.ref == nil ? "`\(ctype.swift)` does not allow reference counting, so despite the name no actual retaining will occur." : "Will retain `\(ctype.swift)`.")\n" + indentation +
                                                                            "/// i.e., ownership is transferred to the ``\(className)`` instance.\n" + indentation +
                                                                            "/// - Parameter op: pointer to the underlying object\n") + (indentation +
-                                                                                                                                        "@inlinable public init(retaining op: UnsafeMutablePointer<\(ctype)>) {\n" + doubleIndentation +
+                                                                                                                                        "@inlinable \(typedPointerOverride)public init(retaining op: UnsafeMutablePointer<\(ctype)>) {\n" + doubleIndentation +
                                                                                                                                         (hasParent ?
                                                                                                                                          "super.init(retainingCPointer: op)\n" :
                                                                                                                                             "ptr = UnsafeMutableRawPointer(op)\n" + doubleIndentation +
