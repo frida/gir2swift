@@ -338,9 +338,9 @@ private extension GIR.Argument {
             return self.argumentTypeName + "(arg\(index))"
         case is GIR.Enumeration:
             if (isNullable || isOptional) {
-                return "arg\(index).flatMap(\(self.argumentTypeName).init(_:))"
+                return "arg\(index).map { unsafeBitCast($0, to: \(self.argumentTypeName).self) }"
             }
-            return self.argumentTypeName + "(arg\(index))"
+            return "unsafeBitCast(arg\(index), to: \(self.argumentTypeName).self)"
         case nil where swiftSignalRef == GIR.stringRef:
             return swiftSignalRef.cast(expression: "arg\(index)", from: typeRef) + ((isNullable || isOptional) ? "" : "!")
         default: // Treat as fundamental (if not a fundamental, report error)
