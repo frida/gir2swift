@@ -35,6 +35,14 @@ public class GIRType: Hashable {
     @inlinable public var isGPointer: Bool {
         return typeName == GIR.gpointer || typeName == GIR.gconstpointer
     }
+
+    /// Return whether this type is the gir2swift-generated `OptionSet`
+    /// wrapper struct around a Clang-imported bitfield (rather than the
+    /// underlying C type itself). Distinguished by having a Swift-side
+    /// name that differs from the C type.
+    @inlinable public var isOptionSetWrapper: Bool {
+        return swiftName != ctype
+    }
     /// Convenience property, returning the dotted prefix
     ///  - Note: this prefix is empty if the type is in the global namespace
     @inlinable public var dottedPrefix: String {
@@ -257,12 +265,12 @@ public class GIRType: Hashable {
         guard let conversion = conversions[source] else {
             if pointerLevel == 0 {
                 guard !GIR.enums.contains(self) else {
-                    let c = EnumTypeConversion(source: source, target: self)
+                    let c = EnumTypeConversion(source: self, target: source)
                     conversions[source] = [c, c]
                     return c.castFromTarget(expression: e)
                 }
                 guard !GIR.bitfields.contains(self) else {
-                    let c = BitfieldTypeConversion(source: source, target: self)
+                    let c = BitfieldTypeConversion(source: self, target: source)
                     conversions[source] = [c, c]
                     return c.castFromTarget(expression: e)
                 }

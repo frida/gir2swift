@@ -827,7 +827,7 @@ public func fieldCode(_ indentation: String, record: GIR.Record, avoiding existi
         guard !field.isPrivate else { return indentation + "// var \(swname) is unavailable because \(name) is private\n" }
         let fieldType = field.containedTypes.first
         let fieldTypeRef = field.typeRef
-        let containedTypeRef = fieldType?.typeRef ?? fieldTypeRef
+        var containedTypeRef = fieldType?.typeRef ?? fieldTypeRef
         let pointee = ptr + ".pointee." + name
         guard field.isReadable || field.isWritable else { return indentation + "// var \(name) is unavailable because it is neigher readable nor writable\n" }
         guard !field.isVoid else { return indentation + "// var \(swname) is unavailable because \(name) is void\n" }
@@ -849,8 +849,9 @@ public func fieldCode(_ indentation: String, record: GIR.Record, avoiding existi
         let fieldRef: TypeReference
         let setterExpression: String
         if ptrLevel == 0, let optionSet = field.knownBitfield {
-            varRef = optionSet.underlyingCRef
+            varRef = optionSet.typeRef
             fieldRef = varRef
+            containedTypeRef = optionSet.underlyingCRef
             idiomaticTypeName = typeName
             setterExpression = "newValue.value"
         } else if ptrLevel == 1, let knownRecord = field.knownRecord {

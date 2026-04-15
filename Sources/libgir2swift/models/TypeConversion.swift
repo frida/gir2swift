@@ -204,7 +204,30 @@ public class EnumTypeConversion: CastConversion {
 }
 
 /// Bit field (`OptionSet`) type conversion operation.
-public class BitfieldTypeConversion: EnumTypeConversion {}
+///
+/// Bridges between the Clang-imported C `OptionSet` (e.g. `GFooFlags`) and
+/// the gir2swift-generated wrapper struct (e.g. `FooFlags`). The wrapper
+/// exposes `init(_ enumValue: GFooFlags)` for forward conversion and a
+/// `value: GFooFlags` accessor for the reverse direction; using these
+/// avoids `init(rawValue:)` label requirements that the underlying
+/// `init<I: BinaryInteger>(_:)` would otherwise need.
+public class BitfieldTypeConversion: EnumTypeConversion {
+    @inlinable
+    override public func castToTarget(from expression: String) -> String {
+        if target.isOptionSetWrapper {
+            return "\(target.castName)(\(expression))"
+        }
+        return "\(expression).value"
+    }
+
+    @inlinable
+    override public func castFromTarget(expression: String) -> String {
+        if source.isOptionSetWrapper {
+            return "\(source.castName)(\(expression))"
+        }
+        return "\(expression).value"
+    }
+}
 
 /// Raw pointer conversion
 public class RawPointerConversion: TypeConversion {
