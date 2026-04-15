@@ -96,21 +96,22 @@ func buildClassTypeDeclaration(for record: GIR.Record, classInstance: GIR.Record
 ///   - classInstance: The class instance to create the metatype properties for.
 /// - Returns: The code that needs to go inside the `classInstance` class definition.
 func buildCodeForClassMetaType(for metaType: GIR.Record, classInstance: GIR.Record) -> String {
-    Code.block {
+    let perClassSuffix = classInstance.uniquePerClassSuffix
+    return Code.block {
         if let getTypeId = classInstance.typegetter {
             "/// This getter returns the GLib type identifier registered for `\(classInstance.name)`"
             "///"
             "/// - Note: to get the type identifier through the static type, use `\(metaType.structRef.type.swiftName).metatypeReference`"
             "@inlinable"
-            "public var metatypeReferenceFor\(classInstance.name): GType { \(getTypeId)() }"
+            "public var metatypeReferenceFor\(perClassSuffix): GType { \(getTypeId)() }"
             ""
             "/// Return a `\(metaType.typeRef.type.ctype)` reference to the underlying class instance."
             "@inlinable"
-            "public static var metatypeFor\(classInstance.name): \(metaType.typeRef.type.ctype)? { \(metaType.structRef.type.swiftName).metatypePointer?.pointee } "
+            "public static var metatypeFor\(perClassSuffix): \(metaType.typeRef.type.ctype)? { \(metaType.structRef.type.swiftName).metatypePointer?.pointee } "
             ""
             "/// Return the `\(metaType.typeRef.type.swiftName)` wrapper referencing the metatype of the receiver."
             "@inlinable"
-            "public var wrapperFor\(classInstance.name): \(metaType.structRef.type.swiftName)? { \(metaType.structRef.type.swiftName)(\(metaType.structRef.type.swiftName).metatypePointer) }"
+            "public var wrapperFor\(perClassSuffix): \(metaType.structRef.type.swiftName)? { \(metaType.structRef.type.swiftName)(\(metaType.structRef.type.swiftName).metatypePointer) }"
             ""
             "/// Creates a new instance of `\(classInstance.name)` and sets its properties using"
             "/// the provided dictionary."
@@ -144,5 +145,25 @@ func buildCodeForClassMetaType(for metaType: GIR.Record, classInstance: GIR.Reco
             "// A Type getter could not be found for `\(classInstance.name.swift)`"
             ""
         }
+    }
+}
+
+private extension GIR.Record {
+    /// Suffix used to make per-class generated property and function names
+    /// unique within an inheritance chain. Two classes in different modules
+    /// can share a simple name (e.g. `Application` exists in both Gtk and
+    /// Gio), and the convenience accessors emitted into the subclass would
+    /// otherwise be Swift-level overrides of non-`open` declarations on the
+    /// superclass. Fall back to the unique C type name when that situation
+    /// applies.
+    var uniquePerClassSuffix: String {
+        var ancestor = parentType
+        while let parent = ancestor {
+            if parent.name == name {
+                return typeRef.type.ctype
+            }
+            ancestor = parent.parentType
+        }
+        return name
     }
 }
