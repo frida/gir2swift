@@ -745,7 +745,6 @@ public func computedPropertyCode(_ indentation: String, record: GIR.Record, avoi
     let doubleIndent = indentation + indentation
     let tripleIndent = doubleIndent + indentation
     let gcall = functionCallCode(doubleIndent, record, constructedRecord: record, ptr: ptrName, doThrow: false)
-    let scall = callSetter(doubleIndent, record, ptr: ptrName)
     let ret = returnCode(doubleIndent, ptr: ptrName)
     return { (pair: GetterSetterPair) -> String in
         let name: String
@@ -790,6 +789,8 @@ public func computedPropertyCode(_ indentation: String, record: GIR.Record, avoi
             let codeError = (setter.throwsError ? (
                 (indentation + "var error: UnsafeMutablePointer<\(GIR.gerror)>?\n") + doubleIndent
             ) : "")
+            let propertySource: TypeReference? = gs === getter ? getter.returns.typeRef : nil
+            let scall = callSetter(doubleIndent, record, ptr: ptrName, propertySource: propertySource)
             let codeCall = scall(setter)
             let codeSuffix = (setter.throwsError ? ( doubleIndent +
                                                      "g_log(messagePtr: error?.pointee.message, level: .error)\n"
@@ -1192,8 +1193,8 @@ public func typedCollection(for prefixedTypeName: String, containedTypes: [GIR.C
 
 
 /// Swift code for calling the underlying setter function and assigning the raw return value
-public func callSetter(_ indentation: String, _ record: GIR.Record? = nil, ptr ptrName: String = "ptr") -> (GIR.Method) -> String {
-    let toSwift = convertSetterArgumentToSwiftFor(record, ptr: ptrName)
+public func callSetter(_ indentation: String, _ record: GIR.Record? = nil, ptr ptrName: String = "ptr", propertySource: TypeReference? = nil) -> (GIR.Method) -> String {
+    let toSwift = convertSetterArgumentToSwiftFor(record, ptr: ptrName, propertySource: propertySource)
     return { method in
         let args = method.args // not .lazy
         let code = ( method.returns.isVoid ? "" : "_ = " ) +
@@ -1371,7 +1372,7 @@ public func toSwift(_ arg: GIR.Argument, ptr: String = "ptr") -> String {
 
 
 /// Swift code for passing a setter to a method of a record / class
-public func convertSetterArgumentToSwiftFor(_ record: GIR.Record?, ptr: String = "ptr") -> (GIR.Argument) -> String {
+public func convertSetterArgumentToSwiftFor(_ record: GIR.Record?, ptr: String = "ptr", propertySource: TypeReference? = nil) -> (GIR.Argument) -> String {
     return { arg in
         let name = arg.nonClashingName
         guard !arg.isScalarArray else { return "&" + name }
@@ -1388,6 +1389,9 @@ public func convertSetterArgumentToSwiftFor(_ record: GIR.Record?, ptr: String =
         } else if paramRef.indirectionLevel == 0 && arg.isKnownBitfield {
             exp = arg.isNullable || arg.isOptional ? "newValue?.value ?? 0" : "newValue.value"
             sourceRef = paramRef
+        } else if let propertySource = propertySource,
+                  needsOuterPointerMutationCast(from: propertySource, to: ref) {
+            return "UnsafeMutablePointer(mutating: newValue)"
         } else {
             exp = "newValue"
             sourceRef = paramRef
@@ -1395,6 +1399,20 @@ public func convertSetterArgumentToSwiftFor(_ record: GIR.Record?, ptr: String =
         let param = ref.cast(expression: exp, from: sourceRef)
         return param
     }
+}
+
+/// Whether the setter argument's Swift type differs from the property's public
+/// Swift type only in the outermost pointer mutability, requiring a
+/// `UnsafeMutablePointer(mutating:)` cast to bridge them.
+@inlinable
+func needsOuterPointerMutationCast(from source: TypeReference, to target: TypeReference) -> Bool {
+    let sourceName = source.fullTypeName
+    let targetName = target.fullTypeName
+    guard sourceName != targetName else { return false }
+    let constPrefix = "UnsafePointer<"
+    let mutablePrefix = "UnsafeMutablePointer<"
+    guard sourceName.hasPrefix(constPrefix), targetName.hasPrefix(mutablePrefix) else { return false }
+    return sourceName.dropFirst(constPrefix.count) == targetName.dropFirst(mutablePrefix.count)
 }
 
 
