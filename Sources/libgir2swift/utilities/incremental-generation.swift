@@ -227,11 +227,21 @@ func expectedGeneratedOutputs(
     return Array(Set(outputs))
 }
 
+/// Return the byte size of a file, or `nil` if it cannot be read.
+private func fileSize(for url: URL) -> Int? {
+    (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+}
+
 /// Decide whether generated output should be rebuilt.
 ///
 /// This function compares the newest available input timestamp with the oldest
 /// available output timestamp. It treats missing outputs, unreadable
-/// modification dates, and explicit overwrite requests as reasons to rebuild.
+/// modification dates, explicit overwrite requests, and zero-byte output
+/// files as reasons to rebuild. Zero-byte outputs typically appear when
+/// SwiftPM materialises declared build-command outputs as empty placeholders
+/// before invoking the plugin — without this check the placeholders would
+/// look newer than the .gir inputs and generation would be skipped, leaving
+/// the build with empty Swift files.
 ///
 /// - Parameters:
 ///   - inputFiles: Input file URLs that influence generation.
@@ -244,6 +254,10 @@ func shouldGenerateOutputs(inputFiles: [URL], outputFiles: [URL], overwrite: Boo
 
     let fileManager = FileManager.default
     guard outputFiles.allSatisfy({ fileManager.fileExists(atPath: $0.path) }) else {
+        return true
+    }
+
+    if outputFiles.contains(where: { (fileSize(for: $0) ?? 0) == 0 }) {
         return true
     }
 
