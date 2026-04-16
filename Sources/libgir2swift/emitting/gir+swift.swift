@@ -790,7 +790,8 @@ public func computedPropertyCode(_ indentation: String, record: GIR.Record, avoi
                 (indentation + "var error: UnsafeMutablePointer<\(GIR.gerror)>?\n") + doubleIndent
             ) : "")
             let propertySource: TypeReference? = gs === getter ? getter.returns.typeRef : nil
-            let scall = callSetter(doubleIndent, record, ptr: ptrName, propertySource: propertySource)
+            let propertyIdiomaticType: String? = gs === getter ? idiomaticType : nil
+            let scall = callSetter(doubleIndent, record, ptr: ptrName, propertySource: propertySource, propertyIdiomaticType: propertyIdiomaticType)
             let codeCall = scall(setter)
             let codeSuffix = (setter.throwsError ? ( doubleIndent +
                                                      "g_log(messagePtr: error?.pointee.message, level: .error)\n"
@@ -1203,8 +1204,8 @@ public func typedCollection(for prefixedTypeName: String, containedTypes: [GIR.C
 
 
 /// Swift code for calling the underlying setter function and assigning the raw return value
-public func callSetter(_ indentation: String, _ record: GIR.Record? = nil, ptr ptrName: String = "ptr", propertySource: TypeReference? = nil) -> (GIR.Method) -> String {
-    let toSwift = convertSetterArgumentToSwiftFor(record, ptr: ptrName, propertySource: propertySource)
+public func callSetter(_ indentation: String, _ record: GIR.Record? = nil, ptr ptrName: String = "ptr", propertySource: TypeReference? = nil, propertyIdiomaticType: String? = nil) -> (GIR.Method) -> String {
+    let toSwift = convertSetterArgumentToSwiftFor(record, ptr: ptrName, propertySource: propertySource, propertyIdiomaticType: propertyIdiomaticType)
     return { method in
         let args = method.args // not .lazy
         let code = ( method.returns.isVoid ? "" : "_ = " ) +
@@ -1382,7 +1383,7 @@ public func toSwift(_ arg: GIR.Argument, ptr: String = "ptr") -> String {
 
 
 /// Swift code for passing a setter to a method of a record / class
-public func convertSetterArgumentToSwiftFor(_ record: GIR.Record?, ptr: String = "ptr", propertySource: TypeReference? = nil) -> (GIR.Argument) -> String {
+public func convertSetterArgumentToSwiftFor(_ record: GIR.Record?, ptr: String = "ptr", propertySource: TypeReference? = nil, propertyIdiomaticType: String? = nil) -> (GIR.Argument) -> String {
     return { arg in
         let name = arg.nonClashingName
         guard !arg.isScalarArray else { return "&" + name }
@@ -1403,7 +1404,7 @@ public func convertSetterArgumentToSwiftFor(_ record: GIR.Record?, ptr: String =
             exp = arg.isNullable || arg.isOptional ? "newValue?.value ?? 0" : "newValue.value"
             sourceRef = paramRef
         } else if let propertySource = propertySource,
-                  let castExpression = propertySetterBridgeCast(from: propertySource, to: ref) {
+                  let castExpression = propertySetterBridgeCast(from: propertySource, to: ref, propertyIdiomaticType: propertyIdiomaticType) {
             return castExpression
         } else {
             exp = "newValue"
@@ -1423,8 +1424,14 @@ public func convertSetterArgumentToSwiftFor(_ record: GIR.Record?, ptr: String =
 ///   `UnsafeMutablePointer(mutating:)` handles the conversion.
 /// * Any deeper mismatch in the nested pointer spelling — bridge through
 ///   `OpaquePointer`, which preserves the runtime representation.
+///
+/// When the property's idiomatic Swift type bridges away from the raw pointer
+/// (e.g. `const gchar *` surfaces as `String`), skip the cast: Swift's implicit
+/// argument bridging handles the C call directly, and synthesising an
+/// `OpaquePointer` from the bridged value would dangle once the temporary
+/// C buffer is released.
 @inlinable
-func propertySetterBridgeCast(from source: TypeReference, to target: TypeReference) -> String? {
+func propertySetterBridgeCast(from source: TypeReference, to target: TypeReference, propertyIdiomaticType: String? = nil) -> String? {
     let sourceName = source.fullTypeName
     let targetName = target.fullTypeName
     guard sourceName != targetName else { return nil }
@@ -1433,6 +1440,12 @@ func propertySetterBridgeCast(from source: TypeReference, to target: TypeReferen
     let sourceIsPointer = sourceName.hasPrefix(constPrefix) || sourceName.hasPrefix(mutablePrefix)
     let targetIsPointer = targetName.hasPrefix(constPrefix) || targetName.hasPrefix(mutablePrefix)
     guard sourceIsPointer, targetIsPointer else { return nil }
+    if let propertyIdiomaticType,
+       !propertyIdiomaticType.contains(constPrefix),
+       !propertyIdiomaticType.contains(mutablePrefix),
+       !propertyIdiomaticType.contains("OpaquePointer") {
+        return nil
+    }
     if sourceName.hasPrefix(constPrefix), targetName.hasPrefix(mutablePrefix),
        sourceName.dropFirst(constPrefix.count) == targetName.dropFirst(mutablePrefix.count) {
         return "UnsafeMutablePointer(mutating: newValue)"
