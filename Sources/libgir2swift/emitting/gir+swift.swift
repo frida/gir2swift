@@ -938,12 +938,10 @@ public func convenienceConstructorCode(_ typeRef: TypeReference, indentation: St
             }
             let deprecated = method.deprecated != nil ? "@available(*, deprecated) " : ""
             let override = record.inheritedMethods.filter { $0.name == rawName }.first != nil
-            let hasSignatureMatchingInherited = record.inheritedMethods.contains {
-                $0.name == rawName
-                && $0.args.count == method.args.count
-                && zip($0.args, method.args).allSatisfy { $0.name == $1.name }
+            let hasZeroArgInheritedWithSameName = method.args.isEmpty && record.inheritedMethods.contains {
+                $0.name == rawName && $0.args.isEmpty
             }
-            let isOverride = hasSignatureMatchingInherited || GIR.overrides.contains(method.cname)
+            let isOverride = hasZeroArgInheritedWithSameName || GIR.overrides.contains(method.cname)
             let fullname = override ? convertName((method.cname.afterFirst() ?? (record.name + nameWithoutPostFix.capitalised))) : name
             let consPrefix = constructorPrefix(method)
             let fname: String
