@@ -864,7 +864,11 @@ public func fieldCode(_ indentation: String, record: GIR.Record, avoiding existi
         } else {
             varRef = containedTypeRef
             fieldRef = varRef
-            idiomaticTypeName = typeName.doForceOptional ? (typeName + "!") : typeName
+            if typeName.maybeCallback {
+                idiomaticTypeName = typeName + "?"
+            } else {
+                idiomaticTypeName = typeName.doForceOptional ? (typeName + "!") : typeName
+            }
             setterExpression = "newValue"
         }
         let varDecl = swiftCode(field, indentation + "@inlinable \(publicDesignation)var \(swname): \(idiomaticTypeName) {\n", indentation: indentation)
