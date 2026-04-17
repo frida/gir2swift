@@ -48,7 +48,11 @@ private func processSpecialCases(_ gir: GIR, for targetDirectoryURL: URL, node: 
     let blURL = targetDirectoryURL.appendingPathComponent(node + ".blacklist")
     GIR.excludeList = ((try? String(contentsOf: exURL)) ?? (try? String(contentsOf: blURL))).flatMap { Set($0.nonEmptyComponents(separatedBy: "\n")) } ?? []
     let vbURL = targetDirectoryURL.appendingPathComponent(node + ".verbatim")
-    GIR.verbatimConstants = (try? String(contentsOf: vbURL)).flatMap { Set($0.nonEmptyComponents(separatedBy: "\n")) } ?? []
+    GIR.verbatimConstants = (try? String(contentsOf: vbURL)).map {
+        Set($0.components(separatedBy: CharacterSet.newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty })
+    } ?? []
     let ovURL = targetDirectoryURL.appendingPathComponent(node + ".override")
     GIR.overrides = (try? String(contentsOf: ovURL)).flatMap { Set($0.nonEmptyComponents(separatedBy: "\n")) } ?? []
     let tcURL = targetDirectoryURL.appendingPathComponent(node + ".typedCollections")
