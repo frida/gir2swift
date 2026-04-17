@@ -22,10 +22,15 @@ private extension ProcessInfo {
     var environmentPaths: [String]? {
         #if os(Windows)
         let separator: Character = ";"
+        // Windows environment variable names are case-insensitive at the
+        // OS level, but Foundation exposes them with whatever casing the
+        // variable was set with — 'Path' on GitHub Actions runners.
+        let raw = environment["PATH"] ?? environment["Path"]
         #else
         let separator: Character = ":"
+        let raw = environment["PATH"]
         #endif
-        return environment["PATH"].flatMap { $0.split(separator: separator, omittingEmptySubsequences: true) }?.map(String.init)
+        return raw.flatMap { $0.split(separator: separator, omittingEmptySubsequences: true) }?.map(String.init)
     }
 }
 
