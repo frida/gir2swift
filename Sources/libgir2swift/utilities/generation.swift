@@ -10,7 +10,14 @@ import Dispatch
 
 private extension String {
     func nonEmptyComponents<S: StringProtocol>(separatedBy separator: S) -> [String] {
-        components(separatedBy: separator).filter { !$0.isEmpty }
+        let pieces: [String]
+        if separator == "\n" {
+            pieces = components(separatedBy: CharacterSet.newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+        } else {
+            pieces = components(separatedBy: separator).map { String($0) }
+        }
+        return pieces.filter { !$0.isEmpty }
     }
 }
 
