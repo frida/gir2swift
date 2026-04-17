@@ -42,21 +42,23 @@ private func load_gir(_ file: String, quiet q: Bool = false, process: (GIR) -> V
 ///   - targetDirectoryURL: URL representing the target source directory containing the module configuration files
 ///   - node: File name node of the `.gir` file without extension
 private func processSpecialCases(_ gir: GIR, for targetDirectoryURL: URL, node: String) {
+    func readLines(_ url: URL) -> Set<String>? {
+        guard let text = try? String(contentsOf: url) else { return nil }
+        return Set(text.components(separatedBy: CharacterSet.newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty })
+    }
     let prURL = targetDirectoryURL.appendingPathComponent(node + ".preamble")
     gir.preamble = (try? String(contentsOf: prURL)) ?? ""
     let exURL = targetDirectoryURL.appendingPathComponent(node + ".exclude")
     let blURL = targetDirectoryURL.appendingPathComponent(node + ".blacklist")
-    GIR.excludeList = ((try? String(contentsOf: exURL)) ?? (try? String(contentsOf: blURL))).flatMap { Set($0.nonEmptyComponents(separatedBy: "\n")) } ?? []
+    GIR.excludeList = readLines(exURL) ?? readLines(blURL) ?? []
     let vbURL = targetDirectoryURL.appendingPathComponent(node + ".verbatim")
-    GIR.verbatimConstants = (try? String(contentsOf: vbURL)).map {
-        Set($0.components(separatedBy: CharacterSet.newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty })
-    } ?? []
+    GIR.verbatimConstants = readLines(vbURL) ?? []
     let ovURL = targetDirectoryURL.appendingPathComponent(node + ".override")
-    GIR.overrides = (try? String(contentsOf: ovURL)).flatMap { Set($0.nonEmptyComponents(separatedBy: "\n")) } ?? []
+    GIR.overrides = readLines(ovURL) ?? []
     let tcURL = targetDirectoryURL.appendingPathComponent(node + ".typedCollections")
-    GIR.typedCollections = (try? String(contentsOf: tcURL)).flatMap { Set($0.nonEmptyComponents(separatedBy: "\n")) } ?? GIR.typedCollections
+    GIR.typedCollections = readLines(tcURL) ?? GIR.typedCollections
 }
 
 extension Gir2Swift {
