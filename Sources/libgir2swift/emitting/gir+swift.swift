@@ -937,8 +937,8 @@ public func convenienceConstructorCode(_ typeRef: TypeReference, indentation: St
                 return "\n\(indentation)// *** \(name)() is not available because it has a varargs (...) parameter!\n\n"
             }
             let deprecated = method.deprecated != nil ? "@available(*, deprecated) " : ""
-            let isOverride = GIR.overrides.contains(method.cname)
             let override = record.inheritedMethods.filter { $0.name == rawName }.first != nil
+            let isOverride = override || GIR.overrides.contains(method.cname)
             let fullname = override ? convertName((method.cname.afterFirst() ?? (record.name + nameWithoutPostFix.capitalised))) : name
             let consPrefix = constructorPrefix(method)
             let fname: String
