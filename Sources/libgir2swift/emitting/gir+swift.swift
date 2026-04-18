@@ -961,9 +961,23 @@ public func convenienceConstructorCode(_ typeRef: TypeReference, indentation: St
 
             // This code will consume floating references upon instantiation. This is suggested by the GObject documentation since Floating references are C-specific syntactic sugar.
             // https://developer.gnome.org/gobject/stable/gobject-The-Base-Object-Type.html
-            let retainBlock = isGObject ?
-            (indentation + "if typeIsA(type: \(factory ? "rv" : "self").type, isAType: InitiallyUnownedClassRef.metatypeReference) { _ = \(factory ? "rv" : "self").refSink() } \n")
-            : ""
+            //
+            // A class-level factory that returns a transfer-none borrowed
+            // reference (e.g. `adw_style_manager_get_default`) also needs
+            // an explicit `ref()` in the non-initially-unowned branch.
+            // Without it, the Swift wrapper's deinit unrefs a reference
+            // it never took, eventually freeing the singleton and handing
+            // subsequent callers a dangling pointer. `*Ref` factories are
+            // unaffected because structs have no deinit.
+            let retainTarget = factory ? "rv" : "self"
+            let borrowsReturnRef = factory && !useRef && method.returns.ownershipTransfer == .none
+            let retainBlock: String
+            if isGObject {
+                let head = indentation + "if typeIsA(type: \(retainTarget).type, isAType: InitiallyUnownedClassRef.metatypeReference) { _ = \(retainTarget).refSink() }"
+                retainBlock = head + (borrowsReturnRef ? " else { _ = \(retainTarget).ref() }\n" : " \n")
+            } else {
+                retainBlock = ""
+            }
 
             let code = swiftCode(method, indentation + "\(deprecated)@inlinable \(publicDesignation)\(fact)" +
                                  constructorParam(method, prefix: p) + (")\(returnDeclaration(method)) {\n" +
