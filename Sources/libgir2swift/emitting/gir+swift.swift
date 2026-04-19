@@ -1120,6 +1120,28 @@ public func functionCallCode(_ indentation: String, _ record: GIR.Record? = nil,
         let throwsError = method.throwsError
         let args = method.args // not .lazy
         let n = args.count
+
+        // Pre-call `g_object_ref` for every transfer-full GObject argument.
+        // The generated call passes the raw pointer directly to C, so without
+        // this extra ref the C side and the caller's Swift wrapper share a
+        // single refcount: when the wrapper later deinits it unrefs the
+        // object, leaving the C side holding a dangling pointer.
+        var preCallHadInstance = false
+        let preCallRefStatements: [String] = args.compactMap { arg in
+            let isInstance = !preCallHadInstance && (arg.instance || arg.isInstanceOf(record))
+            if isInstance {
+                preCallHadInstance = true
+                return nil
+            }
+            guard arg.ownershipTransfer == .full,
+                  let knownRecord = arg.knownRecord,
+                  knownRecord.rootType.name == "Object",
+                  knownRecord.ref != nil
+            else { return nil }
+            let dot = arg.isNullable ? "?." : "."
+            let expr = "\(arg.argumentName)\(dot)\(knownRecord.ptrName)"
+            return "_ = g_object_ref(gpointer(\(expr)))"
+        }
         let rv = method.returns
         let isVoid = rvVar.isEmpty || rv.isVoid
         let maybeOptional = rv.maybeOptional(for: record)
@@ -1191,6 +1213,7 @@ public func functionCallCode(_ indentation: String, _ record: GIR.Record? = nil,
         }
         let code = Code.block(indentation: indentation) {
             errorVariableDeclaration
+            Code.loop(over: preCallRefStatements) { $0 }
             invocationResultCode
             potentialGuard + potentialThrow + returnVariableEquals + castCode + suffix
             nilGuardCode
