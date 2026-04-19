@@ -1112,6 +1112,13 @@ public func functionCallCode(_ indentation: String, _ record: GIR.Record? = nil,
             }
             return "UnsafeMutablePointer<\(ref.type.ctype.swift)>(OpaquePointer(_: \(name).\(knownRecord.ptrName)))"
         }
+        // When the parameter is surfaced as `String`, rely on Swift's
+        // automatic `String → UnsafePointer<CChar>(?)` bridging at the C
+        // call boundary instead of emitting `UnsafePointer<char>(…)`,
+        // which would reference the C type name (not a Swift type).
+        if !instance, arg.swiftParamRef.type === GIR.stringType {
+            return varName
+        }
         let param = ref.cast(expression: varName, from: arg.swiftParamRef)
         return param
     }
@@ -1453,6 +1460,12 @@ public func convertSetterArgumentToSwiftFor(_ record: GIR.Record?, ptr: String =
         } else {
             exp = "newValue"
             sourceRef = paramRef
+        }
+        // Rely on Swift's automatic `String → UnsafePointer<CChar>(?)`
+        // bridging at the C call boundary instead of emitting
+        // `UnsafePointer<char>(…)` (which would reference the C type name).
+        if sourceRef.type === GIR.stringType {
+            return exp
         }
         let param = ref.cast(expression: exp, from: sourceRef)
         return param
@@ -1877,7 +1890,7 @@ public func recordClassCode(_ e: GIR.Record, parent: String, indentation: String
                           "/// - Parameter transform_to: ``ValueTransformer`` to use for backwards transformation\n" + indentation +
                           "/// - Returns: binding reference or `nil` in case of an error\n" + indentation +
                           "@discardableResult @inlinable func bind<Q: PropertyNameProtocol, T: GLibObject.ObjectProtocol>(property source_property: \(className)PropertyName, to target: T, _ target_property: Q, flags f: BindingFlags = .default, transformFrom transform_from: @escaping GLibObject.ValueTransformer = { $0.transform(destValue: $1) }, transformTo transform_to: @escaping GLibObject.ValueTransformer = { $0.transform(destValue: $1) }) -> BindingRef! {\n" + doubleIndentation +
-                          "func _bind(_ source: UnsafePointer<gchar>, to t: T, _ target_property: UnsafePointer<gchar>, flags f: BindingFlags = .default, holder: BindingClosureHolder, transformFrom transform_from: @convention(c) @escaping (gpointer, gpointer, gpointer, gpointer) -> gboolean, transformTo transform_to: @convention(c) @escaping (gpointer, gpointer, gpointer, gpointer) -> gboolean) -> BindingRef! {\n" + tripleIndentation +
+                          "func _bind(_ source: String, to t: T, _ target_property: String, flags f: BindingFlags = .default, holder: BindingClosureHolder, transformFrom transform_from: @convention(c) @escaping (gpointer, gpointer, gpointer, gpointer) -> gboolean, transformTo transform_to: @convention(c) @escaping (gpointer, gpointer, gpointer, gpointer) -> gboolean) -> BindingRef! {\n" + tripleIndentation +
                           "let holder = UnsafeMutableRawPointer(Unmanaged.passRetained(holder).toOpaque())\n" + tripleIndentation +
                           "let from = unsafeBitCast(transform_from, to: BindingTransformFunc.self)\n" + tripleIndentation +
                           "let to   = unsafeBitCast(transform_to,   to: BindingTransformFunc.self)\n" + tripleIndentation +

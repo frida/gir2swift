@@ -77,6 +77,21 @@ public extension GIR.CType {
             ref = currentRef.type.isAlias ? currentRef.type.parent : nil
             if ref?.indirectionLevel != currentRef.indirectionLevel { ref = nil }
         }
+        // Swift bridges `String` to `UnsafePointer<CChar>(?)` at C call
+        // boundaries, so surface semantic-string GIR types (`utf8`,
+        // `filename`) and const `char`/`gchar` pointers as `String`. Mutable
+        // char pointers are left alone — Swift can't hand a C function an
+        // `UnsafeMutablePointer<CChar>` from a `String`.
+        if typeRef.indirectionLevel == 1 {
+            let n = typeRef.type.typeName
+            let isSemanticString = n == "utf8" || n == "filename"
+            let isConstCharPointer = typeRef.isConst && (n == "char" || n == "gchar")
+            if isSemanticString || isConstCharPointer {
+                var replacement = GIR.stringRef
+                replacement.isOptional = typeRef.isOptional
+                return replacement
+            }
+        }
         return typeRef
     }
 
