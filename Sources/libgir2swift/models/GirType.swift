@@ -527,6 +527,8 @@ public final class GIROpaquePointerType: GIRType {
 func typeReference(named identifier: String? = nil, for name: String, in namespace: String? = nil, swiftName: String? = nil, typeName: String? = nil, cType: String, isOptional: Bool = false) -> TypeReference {
     let info = decodeIndirection(for: cType)
     let prefixedName = namespace.map { $0 + "." + name } ?? name
+    GIR.typeRegistryLock.lock()
+    defer { GIR.typeRegistryLock.unlock() }
     let maybeType = GIR.namedTypes[prefixedName]?.first { $0.ctype == info.innerType }
     if maybeType == nil, let unprefixedType = (GIR.namedTypes[name] ?? []).lazy.filter({
         $0.ctype == cType || $0.ctype == info.innerType
@@ -551,6 +553,8 @@ func typeReference(named identifier: String? = nil, for name: String, in namespa
 func typeReference(original: GIRType, named identifier: String? = nil, for name: String, in namespace: String? = nil, swiftName: String? = nil, cType: String, isOptional: Bool = false) -> TypeReference {
     let info = decodeIndirection(for: cType)
     let prefixedName = namespace.map { $0 + "." + name } ?? name
+    GIR.typeRegistryLock.lock()
+    defer { GIR.typeRegistryLock.unlock() }
     let maybeType = GIR.namedTypes[prefixedName]?.first { $0.ctype == info.innerType }
     let type = maybeType ?? GIRType(aliasOf: original, name: name, in: namespace ?? "", swiftName: swiftName, ctype: info.innerType)
     let t = addType(type)
@@ -587,6 +591,8 @@ func genericReference(named identifier: String? = nil, for name: String, contain
     let inner = "<" + containedTypeName + ">"
     let nonOptionalName = String(prefixedName) + inner
     let suffixedName = nonOptionalName + optionalSuffix
+    GIR.typeRegistryLock.lock()
+    defer { GIR.typeRegistryLock.unlock() }
     let maybeType = GIR.namedTypes[suffixedName]?.first { $0.ctype == info.innerType }
     let maybeInnerType = GIR.namedTypes[containedTypeName]?.first
     let innerType: GIRType
@@ -605,6 +611,8 @@ func genericReference(named identifier: String? = nil, for name: String, contain
 /// - Returns: An existing type matching the new type, or the passed in type if new
 @inlinable
 func addType(_ type: GIRType) -> GIRType {
+    GIR.typeRegistryLock.lock()
+    defer { GIR.typeRegistryLock.unlock() }
     if let i = GIR.knownTypes.firstIndex(of: type) {
         return GIR.knownTypes[i]
     }

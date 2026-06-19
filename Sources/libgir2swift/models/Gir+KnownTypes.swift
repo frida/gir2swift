@@ -248,6 +248,10 @@ public extension GIR {
     /// All known types so far
     static var knownTypes: Set<GIRType> = fundamentalTypes
 
+    /// Serialises access to `knownTypes` and `namedTypes`, which are mutated
+    /// lazily while emitting code from multiple queues concurrently.
+    static let typeRegistryLock = NSRecursiveLock()
+
     /// Mapping from names to known types
     static var namedTypes: [String : Set<GIRType>] = {
         var namedTypes = [String : Set<GIRType>]()
