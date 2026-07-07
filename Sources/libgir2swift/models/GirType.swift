@@ -65,10 +65,22 @@ public class GIRType: Hashable {
         let e = nm.index(before: nm.endIndex)
         let lastChar = nm[e]
         guard lastChar == "!" || lastChar == "?" else {
+            if let wrapperName = knownEnumWrapperName { return wrapperName }
             return nm.hasSuffix("Ref") || GIR.knownBitfields[nm] != nil ? nm : typeNamePrefixedWhereNecessary
         }
         let s = nm.startIndex
         return prefixedWhereNecessary(String(nm[s..<e]))
+    }
+
+    /// The escaped, prefixed Swift name of the generated wrapper struct for a
+    /// known enumeration, or `nil` when the receiver is not such a wrapper.
+    /// Derived from `name` so it is consistent across the multiple type
+    /// instances that can represent the same enumeration.
+    @inlinable public var knownEnumWrapperName: String? {
+        guard swiftName != ctype,
+              let knownEnum = GIR.knownEnums[prefixedName] ?? GIR.knownEnums[name]
+        else { return nil }
+        return prefixedWhereNecessary(knownEnum.typeRef.type.name.typeEscaped.swift)
     }
 
     /// Type name to use for casting: removes trailing `!` and `?`
@@ -235,8 +247,8 @@ public class GIRType: Hashable {
     public func knownCast(expression: String, to target: GIRType, pointerLevel: Int = 0, const: Bool = false) -> String? {
         guard let conversion = conversions[target] else {
             if pointerLevel == 0 {
-                guard !GIR.enums.contains(self) else {
-                    let c = EnumTypeConversion(source: self, target: target)
+                guard GIR.knownEnums[name] == nil && GIR.knownEnums[prefixedName] == nil else {
+                    let c = BitfieldTypeConversion(source: self, target: target)
                     conversions[target] = [c, c]
                     return c.castToTarget(from: expression)
                 }
@@ -264,8 +276,8 @@ public class GIRType: Hashable {
     public func knownCast(expression e: String, from source: GIRType, pointerLevel: Int = 0, const: Bool = false) -> String? {
         guard let conversion = conversions[source] else {
             if pointerLevel == 0 {
-                guard !GIR.enums.contains(self) else {
-                    let c = EnumTypeConversion(source: self, target: source)
+                guard GIR.knownEnums[name] == nil && GIR.knownEnums[prefixedName] == nil else {
+                    let c = BitfieldTypeConversion(source: self, target: source)
                     conversions[source] = [c, c]
                     return c.castFromTarget(expression: e)
                 }

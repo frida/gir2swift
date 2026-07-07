@@ -362,61 +362,47 @@ public func swiftCallbackAliasCode(callback: GIR.Callback) -> String {
     }
 }
 
-/// Swift code type alias representation of an enum
-public func typeAlias(_ e: GIR.Enumeration) -> String {
-    let original = e.typeRef.type.typeName.swift
-    let parent = e.typeRef.type.parent?.type.typeName ?? e.typeRef.type.ctype
-    let comment = original == parent ? "" : (" // " + parent)
-    let code = swiftCode(e, "public typealias " + e.escapedName.swift + " = " + original + comment)
-    return code + "\n"
-}
-
 // MARK: - Swift code for Enumerations
 
-/// Swift code representation of an enum
+/// Swift code representation of an enum.
+///
+/// Enumerations are emitted as a distinct `RawRepresentable` value type
+/// (rather than a `typealias` + `extension` on the imported C enum) so that
+/// their members are primary declarations, always visible across module
+/// boundaries regardless of how ClangImporter materialises the C enum.
 public func swiftCode(_ e: GIR.Enumeration) -> String {
     let indentation = "    "
-    let alias = typeAlias(e)
-    let name = e.escapedName
-    //    let swift = name.swift
-    //    // FIXME: isErrorType never seems to be true
-    //    let isErrorType = name == GIR.errorT || swift == GIR.errorT
-    //    let ext = isErrorType ? ": \(GIR.errorProtocol.name)" : ""
-    //    let pub = isErrorType ? "" : "public "
-    let vcf = valueCode(indentation)
-    //    let vdf = valueDeprecated(indentation, typeName: name)
-    let values = e.members
-    //    let names = Set(values.map(\.name.camelCase.swiftQuoted))
-    //    let deprecated = values.lazy.filter { !names.contains($0.name.swiftName) }
-    let head = "\n\npublic extension " + name + " {\n"
-    let initialiser = """
-        /// Cast constructor, converting any binary integer to a
-        /// `\(name)`.
-        /// - Parameter raw: The raw integer value to initialise the enum from
-        @inlinable init!<I: BinaryInteger>(_ raw: I) {
-            func castTo\(name)Int<I: BinaryInteger, J: BinaryInteger>(_ param: I) -> J { J(param) }
-            self.init(rawValue: castTo\(name)Int(raw))
-        }
-    """ + "\n"
-    let fields = values.map(vcf).joined(separator: "\n") // + "\n" + deprecated.map(vdf).joined(separator: "\n")
+    let doubleIndentation = indentation + indentation
+    let name = e.escapedName.swift
+    let ctype = e.typeRef.type.typeName.swift
+    let vcf = enumValueCode(indentation, type: name)
+    let head = swiftCode(e, "public struct \(name): RawRepresentable, Equatable, Sendable {\n" + indentation +
+        "/// The raw value of the underlying `\(ctype)` enum\n" + indentation +
+        "public var rawValue: UInt32 = 0\n" + indentation +
+        "/// The equivalent underlying `\(ctype)` enum value\n" + indentation +
+        "@inlinable public var value: \(ctype) {\n" + doubleIndentation +
+        "func castTo\(ctype)Int<I: BinaryInteger, J: BinaryInteger>(_ param: I) -> J { J(param) }\n" + doubleIndentation +
+        "return \(ctype)(rawValue: castTo\(ctype)Int(rawValue))\n" + indentation +
+        "}\n\n" + indentation +
+        "/// Creates a new instance with the specified raw value\n" + indentation +
+        "@inlinable public init(rawValue: UInt32) { self.rawValue = rawValue }\n" + indentation +
+        "/// Creates a new instance from the underlying `\(ctype)` enum value\n" + indentation +
+        "@inlinable public init(_ enumValue: \(ctype)) { self.rawValue = UInt32(enumValue.rawValue) }\n" + indentation +
+        "/// Creates a new instance with the specified Int value\n" + indentation +
+        "@inlinable public init<I: BinaryInteger>(_ intValue: I) { self.rawValue = UInt32(intValue) }\n\n")
+    let fields = e.members.map(vcf).joined(separator: "\n")
     let tail = "\n}\n\n"
-    let code = alias + head + initialiser + fields + tail
-    return code
+    return head + fields + tail
 }
 
-/// Swift code representation of an enum value
-public func valueCode(_ indentation: String) -> (GIR.Enumeration.Member) -> String {
+/// Swift code representation of an enum value as a static constant of the
+/// wrapping `RawRepresentable` struct.
+public func enumValueCode(_ indentation: String, type: String) -> (GIR.Enumeration.Member) -> String {
     return { (m: GIR.Enumeration.Member) -> String in
         let value = String(m.value)
         let id = m.typeRef.identifier ?? m.cname
-        let cID: String
-        if !id.isEmpty {
-            cID = id
-        } else {
-            cID = value
-        }
-        let comment = cID == value ? "" : (" // " + value)
-        let code = swiftCode(m, indentation + "static let " + m.swiftCamelCaseName.swiftQuoted + " = " + cID + comment, indentation: indentation)
+        let comment = id.isEmpty ? "" : (" // " + id)
+        let code = swiftCode(m, indentation + "public static let " + m.swiftCamelCaseName.swiftQuoted + " = " + type + "(" + value + ")" + comment, indentation: indentation)
         return code + "\n"
     }
 }
@@ -850,7 +836,13 @@ public func fieldCode(_ indentation: String, record: GIR.Record, avoiding existi
         let varRef: TypeReference
         let fieldRef: TypeReference
         let setterExpression: String
-        if ptrLevel == 0, let optionSet = field.knownBitfield {
+        if ptrLevel == 0, field.isKnownEnum {
+            varRef = field.typeRef
+            fieldRef = varRef
+            containedTypeRef = field.underlyingCRef
+            idiomaticTypeName = typeName
+            setterExpression = "newValue.value"
+        } else if ptrLevel == 0, let optionSet = field.knownBitfield {
             varRef = optionSet.typeRef
             fieldRef = varRef
             containedTypeRef = optionSet.underlyingCRef
@@ -1090,7 +1082,7 @@ public func functionCallCode(_ indentation: String, _ record: GIR.Record? = nil,
         let argPtrName: String
         if let knownRecord = arg.knownRecord {
             argPtrName = (arg.isNullable ? "?." : ".") + knownRecord.ptrName
-        } else if arg.typeRef.indirectionLevel == 0 && arg.isKnownBitfield {
+        } else if arg.typeRef.indirectionLevel == 0 && (arg.isKnownEnum || arg.isKnownBitfield) {
             argPtrName = arg.isNullable || arg.isOptional ? ".value ?? 0" : ".value"
         } else {
             argPtrName = ""
@@ -1181,7 +1173,7 @@ public func functionCallCode(_ indentation: String, _ record: GIR.Record? = nil,
         }
         let rvRef: TypeReference
         let rvSwiftRef: TypeReference
-        if rv.typeRef.indirectionLevel == 0 && rv.isKnownBitfield {
+        if rv.typeRef.indirectionLevel == 0 && (rv.isKnownEnum || rv.isKnownBitfield) {
             rvRef = rv.underlyingCRef
             rvSwiftRef = rv.typeRef
         } else {
@@ -1363,7 +1355,7 @@ public func callbackParameterCode(for argument: GIR.Argument) -> String {
     let prefixedName = argument.prefixedArgumentName
     let isTemplate = argument.isKnownRecordReference
     let type = argument.templateTypeName
-    let escaping = type.maybeCallback ? "@escaping " : ""
+    let escaping = type.maybeCallback && !argument.isKnownEnum && !argument.isKnownBitfield ? "@escaping " : ""
     let defaultValue = !isTemplate && argument.isNullable && argument.allowNone ? " = nil" : ""
     let code = prefixedName + ": " + escaping + type + defaultValue
     return code
@@ -1375,7 +1367,7 @@ public func callbackParameterCode(for argument: GIR.Argument) -> String {
     let prefixedName = prefix + " " + name
     let isTemplate = argument.isKnownRecordReference
     let type = argument.templateTypeName
-    let escaping = type.maybeCallback ? "@escaping " : ""
+    let escaping = type.maybeCallback && !argument.isKnownEnum && !argument.isKnownBitfield ? "@escaping " : ""
     let defaultValue = !isTemplate && argument.isNullable && argument.allowNone ? " = nil" : ""
     let code = prefixedName + ": " + escaping + type + defaultValue
     return code
@@ -1389,7 +1381,7 @@ public func callbackParameterCode(for argument: GIR.Argument) -> String {
 @inlinable public func nullableRefParameterCode(for argument: GIR.Argument) -> String {
     let prefixedName = argument.prefixedArgumentName
     let type = argument.defaultRefTemplateTypeName
-    let escaping = type.maybeCallback ? "@escaping " : ""
+    let escaping = type.maybeCallback && !argument.isKnownEnum && !argument.isKnownBitfield ? "@escaping " : ""
     let defaultValue = argument.isNullable && argument.allowNone ? " = nil" : ""
     let code = prefixedName + ": " + escaping + type + defaultValue
     return code
@@ -1400,7 +1392,7 @@ public func callbackParameterCode(for argument: GIR.Argument) -> String {
     let name = argument.argumentName
     let prefixedName = prefix + " " + name
     let type = argument.defaultRefTemplateTypeName
-    let escaping = type.maybeCallback ? "@escaping " : ""
+    let escaping = type.maybeCallback && !argument.isKnownEnum && !argument.isKnownBitfield ? "@escaping " : ""
     let defaultValue = argument.isNullable && argument.allowNone ? " = nil" : ""
     let code = prefixedName + ": " + escaping + type + defaultValue
     return code
@@ -1451,7 +1443,7 @@ public func convertSetterArgumentToSwiftFor(_ record: GIR.Record?, ptr: String =
         } else if arg.instance || arg.isInstanceOf(record) {
             exp = ptr
             sourceRef = paramRef
-        } else if paramRef.indirectionLevel == 0 && arg.isKnownBitfield {
+        } else if paramRef.indirectionLevel == 0 && (arg.isKnownEnum || arg.isKnownBitfield) {
             exp = arg.isNullable || arg.isOptional ? "newValue?.value ?? 0" : "newValue.value"
             sourceRef = paramRef
         } else if let propertySource = propertySource,
@@ -1638,7 +1630,7 @@ public func recordStructCode(_ e: GIR.Record, indentation: String = "    ", ptr:
     "@inlinable init(opaquePointer: OpaquePointer) {\n" + doubleIndentation +
     "ptr = UnsafeMutableRawPointer(opaquePointer)\n" + indentation +
     "}\n\n" + indentation +
-    constructors.map(ccode).joined(separator: "\n") +
+    constructorsWithoutDuplicateDeclarations(constructors.map(ccode)).joined(separator: "\n") +
     factories.map(fcode).joined(separator: "\n") +
     "}\n\n"
     return code
@@ -1874,7 +1866,7 @@ public func recordClassCode(_ e: GIR.Record, parent: String, indentation: String
                                                                                                                                                                                                                                                                                         "ptr = UnsafeMutableRawPointer(p)\n" + doubleIndentation +
                                                                                                                                                                                                                                                                                      "\(retain)(\(retainPtr))\n") + indentation +
                                                                                                                                                                                                                                                                                     "}\n\n"))
-    let code2 = constructors.map(ccode).joined(separator: "\n") + "\n" +
+    let code2 = constructorsWithoutDuplicateDeclarations(constructors.map(ccode)).joined(separator: "\n") + "\n" +
     factories.map(fcode).joined(separator: "\n") + "\n" +
     "}\n\n"
     let code3 = String(noProperties ? "// MARK: no \(className) properties\n" : "public enum \(className)PropertyName: String, PropertyNameProtocol {\n") +
@@ -1943,6 +1935,47 @@ public func recordClassCode(_ e: GIR.Record, parent: String, indentation: String
                           signals.map(scode).joined(separator: "\n") + "\n" +
                           properties.map(ncode).joined(separator: "\n") + "\n}\n\n")
     return code1 + metaTypeCode + code2 + code3 + signalEnumCode + buildSignalExtension(for: e)
+}
+
+/// Drop constructors whose rendered declaration duplicates another's,
+/// keeping a non-deprecated constructor over a deprecated alias that emits
+/// the same Swift initialiser (e.g. `g_time_zone_new_identifier` wins over
+/// the deprecated `g_time_zone_new`, both of which map to `init(identifier:)`).
+public func constructorsWithoutDuplicateDeclarations(_ rendered: [String]) -> [String] {
+    let deprecatedAttribute = "@available(*, deprecated)"
+    var preferredIndexForSelector: [String: Int] = [:]
+    for (index, code) in rendered.enumerated() {
+        guard let selector = initialiserSelector(of: code) else { continue }
+        guard let existing = preferredIndexForSelector[selector] else {
+            preferredIndexForSelector[selector] = index
+            continue
+        }
+        if rendered[existing].contains(deprecatedAttribute) && !code.contains(deprecatedAttribute) {
+            preferredIndexForSelector[selector] = index
+        }
+    }
+    return rendered.enumerated().compactMap { index, code in
+        guard let selector = initialiserSelector(of: code) else { return code }
+        return preferredIndexForSelector[selector] == index ? code : nil
+    }
+}
+
+/// The whitespace-insensitive initialiser or factory declaration within
+/// rendered constructor code: everything from the `init`/`func` keyword up to
+/// the body's opening brace, so `init( identifier:` and `init(identifier:`
+/// compare equal as the same Swift selector.
+///
+/// The keyword is located as the earliest of `init<` (generic initialiser),
+/// `init(` (plain initialiser) or `func ` (factory) so the selector captures
+/// the whole signature — including a generic clause — and never falls through
+/// to a `super.init(…)` call in the body, which would collapse distinct
+/// generic constructors onto one selector.
+public func initialiserSelector(of renderedConstructor: String) -> String? {
+    let keywords = ["init<", "init(", "func "]
+    guard let start = keywords.compactMap({ renderedConstructor.range(of: $0)?.lowerBound }).min() else { return nil }
+    let declaration = renderedConstructor[start...]
+    guard let brace = declaration.range(of: " {")?.lowerBound else { return nil }
+    return declaration[..<brace].filter { !$0.isWhitespace }
 }
 
 // MARK: - Swift code for Record/Class methods

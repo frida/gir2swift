@@ -208,6 +208,11 @@ extension GIR {
             typeRef.knownIndirectionLevel == 1 ? knownNameRecord : nil
         }
         
+        /// Return the known enumeration the argument represents (nil if not known).
+        @inlinable public var knownEnum: GIR.Enumeration? {
+            GIR.knownEnums[typeRef.type.prefixedName] ?? GIR.knownEnums[typeRef.type.name]
+        }
+
         /// Return the known bitfield the argument represents (nil if not known).
         @inlinable public var knownBitfield: GIR.Bitfield? {
             GIR.knownBitfields[typeRef.type.prefixedName] ?? GIR.knownBitfields[typeRef.type.name]
@@ -219,6 +224,11 @@ extension GIR {
         /// indicates whether the receiver is a known class or record
         @inlinable
         public var isKnownRecord: Bool { return knownRecord != nil }
+
+        /// indicates whether the receiver is a known enumeration (wrapped as a
+        /// native Swift value type rather than the raw C enum)
+        @inlinable
+        public var isKnownEnum: Bool { return knownEnum != nil }
 
         /// indicates whether the receiver is a known bit field
         @inlinable

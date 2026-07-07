@@ -41,11 +41,27 @@ extension GIR {
             super.init(node: node, at: index)
         }
 
-        /// Register this type as an enumeration type
+        /// Register this type as an enumeration type.
+        ///
+        /// Enumerations are wrapped in a native `RawRepresentable` struct
+        /// (distinct from the imported C enum), so a conversion between the
+        /// C type and the wrapper is registered — mirroring `Bitfield` — to
+        /// bridge at the C boundary via `init(_ enumValue:)` / `value`.
         @inlinable
         override public func registerKnownType() {
-            if !GIR.enums.contains(typeRef.type) {
-                GIR.enums.insert(typeRef.type)
+            let type = typeRef.type
+            let ctype = GIRType(name: type.typeName, typeName: type.typeName, ctype: type.ctype)
+
+            if !GIR.enums.contains(ctype) {
+                let c = BitfieldTypeConversion(source: ctype, target: type)
+                type.conversions[ctype] = [c, c]
+                GIR.enums.insert(ctype)
+            }
+
+            if !GIR.enums.contains(type) {
+                let c = BitfieldTypeConversion(source: type, target: ctype)
+                type.conversions[ctype] = [c, c]
+                GIR.enums.insert(type)
             }
         }
     }

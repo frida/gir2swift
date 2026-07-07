@@ -301,6 +301,8 @@ public extension GIR.CType {
                     name = unprefixedName
                 }
             }
+        } else if pointers == 0 && isKnownEnum {
+            name = ref.type.knownEnumWrapperName ?? ref.type.swiftNamePrefixedWhereNecessary
         } else if pointers == 0 && isKnownBitfield {
             name = prefixedTypeName
         } else {
@@ -352,8 +354,8 @@ public extension GIR.Argument {
         let name = swiftRef.fullUnderlyingTypeName(asOptional: containsGPointer ? true : nil).withNormalisedPrefix
         let type = typeRef.type
         guard type === swiftRef.type && (isScalarArray || swiftRef.indirectionLevel > 0) else {
-            guard typeRef.knownIndirectionLevel != 0 || !isKnownBitfield else {
-                return type.namePrefixedWhereNecessary.swift
+            guard typeRef.knownIndirectionLevel != 0 || !(isKnownEnum || isKnownBitfield) else {
+                return type.knownEnumWrapperName ?? type.namePrefixedWhereNecessary.swift
             }
             let optionalName = ((isNullable || isOptional) && !name.isOptional) ? (name + "!") : name
             return optionalName

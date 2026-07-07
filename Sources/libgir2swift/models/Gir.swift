@@ -80,7 +80,9 @@ public final class GIR {
     public static var knownDataTypes:   [ String : Datatype ] = [:]
     /// context of known records
     public static var knownRecords: [ String : Record ] = [:]
-    /// context of known records
+    /// context of known enumerations, keyed by name (mirrors `knownBitfields`)
+    public static var knownEnums: [ String : Enumeration ] = [:]
+    /// context of known bit fields
     public static var knownBitfields: [ String : Bitfield ] = [:]
     /// context of known functions
     public static var KnownFunctions: [ String : Function ] = [:]
@@ -204,6 +206,8 @@ public final class GIR {
             /// Record known enums and their values
             func notKnownEnum(_ e: Enumeration) -> Bool {
                 e.members.forEach { setKnownCIdentifier(ofType: $0) }
+                GIR.knownEnums[e.name] = e
+                GIR.knownEnums[prefixed(e.name)] = e
                 return notKnownType(e)
             }
 
