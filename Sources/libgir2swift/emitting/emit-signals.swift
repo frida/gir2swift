@@ -52,7 +52,7 @@ func buildSignalExtension(for record: GIR.Record) -> String {
     let recordName = record.name.swift
     let signalType = recordName + "SignalName"
 
-    if record.signals.isEmpty {
+    if record.signals.isEmpty && record.properties.isEmpty {
         return "// MARK: \(record.name.swift) has no signals\n"
     }
     
