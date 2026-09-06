@@ -21,6 +21,8 @@ extension GIR {
         public let typegetter: String?
         /// Methods associated with this record
         public let methods: [Method]
+        /// Virtual methods (vtable entries) associated with this record
+        public let virtualMethods: [Method]
         /// Functions associated with this record
         public var functions = [Function]()
         /// Constructors for this record
@@ -77,12 +79,13 @@ extension GIR {
         ///   - comment: Documentation text for the record
         ///   - introspectable: Set to `true` if introspectable
         ///   - deprecated: Documentation on deprecation status if non-`nil`
-        public init(name: String, cname: String, type: TypeReference, cprefix: String, correspondingCType: String? = nil, typegetter: String? = nil, isGTypeStructForType: String? = nil, methods: [Method] = [], functions: [Function] = [], constructors: [Method] = [], properties: [Property] = [], fields: [Field] = [], signals: [Signal] = [], interfaces: [String] = [], comment: String = "", introspectable: Bool = false, deprecated: String? = nil) {
+        public init(name: String, cname: String, type: TypeReference, cprefix: String, correspondingCType: String? = nil, typegetter: String? = nil, isGTypeStructForType: String? = nil, methods: [Method] = [], virtualMethods: [Method] = [], functions: [Function] = [], constructors: [Method] = [], properties: [Property] = [], fields: [Field] = [], signals: [Signal] = [], interfaces: [String] = [], comment: String = "", introspectable: Bool = false, deprecated: String? = nil) {
             self.cprefix = cprefix
             self.correspondingCType = correspondingCType
             self.typegetter = typegetter
             self.isGTypeStructForType = isGTypeStructForType
             self.methods = methods
+            self.virtualMethods = virtualMethods
             self.functions = functions
             self.constructors = constructors
             self.properties = properties
@@ -113,6 +116,8 @@ extension GIR {
             let children = node.children.lazy
             let meths = children.filter { $0.name == "method" }
             methods = meths.enumerated().map { Method(node: $0.1, at: $0.0) }
+            let vmeths = children.filter { $0.name == "virtual-method" }
+            virtualMethods = vmeths.enumerated().map { Method(node: $0.1, at: $0.0) }
             let cons = children.filter { $0.name == "constructor" }
             constructors = cons.enumerated().map { Method(node: $0.1, at: $0.0) }
             let props = children.filter { $0.name == "property" }
