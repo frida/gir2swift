@@ -1,6 +1,7 @@
 import Foundation
 
 private let asyncAvailability = "@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)"
+private let implementationAvailability = "@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)"
 
 /// Emits Swift support for implementing GObject interfaces and subclassing
 /// GObject-derived classes. For every interface and derivable class that owns
@@ -44,6 +45,7 @@ func buildSubclassingCode(for record: GIR.Record) -> String {
     lines.append("// MARK: - \(record.name.swift) \(isInterface ? "interface implementation" : "subclassing") support")
     lines.append("")
     lines.append("/// Base class for \(isInterface ? "implementing the `\(record.name.swift)` interface" : "subclassing `\(record.name.swift)`") in Swift.")
+    lines.append(implementationAvailability)
     lines.append("open class \(baseName) {")
     lines.append("    /// Pointer to the underlying GObject, usable wherever a `\(ctype)` is expected.")
     lines.append("    public let handle: \(handleType)")
@@ -182,11 +184,11 @@ private func overridableMethod(_ vfunc: RenderableVFunc) -> [String] {
     if vfunc.isAsync {
         let effects = vfunc.asyncThrows ? " async throws" : " async"
         return [asyncAvailability,
-                "open func \(escaped(vfunc.swiftName))(\(paramList))\(effects)\(ret) {",
+                "@MainActor open func \(escaped(vfunc.swiftName))(\(paramList))\(effects)\(ret) {",
                 "    \(defaultReturnStatement(vfunc.returnType))",
                 "}"]
     }
-    return ["open func \(escaped(vfunc.swiftName))(\(paramList))\(ret) {",
+    return ["@MainActor open func \(escaped(vfunc.swiftName))(\(paramList))\(ret) {",
             "    \(defaultReturnStatement(vfunc.returnType))",
             "}"]
 }
@@ -302,11 +304,15 @@ private func thunk(_ vfunc: RenderableVFunc, baseName: String, selfType: String)
     let cParamTypes = cParams.map { $0.1 }.joined(separator: ", ")
     let ret = vfunc.returnType.isEmpty ? "Void" : vfunc.returnType
     let callArgs = vfunc.params.map { "\(escaped($0.label)): \(escaped($0.label))" }.joined(separator: ", ")
-    let sig = "private static let \(vfunc.swiftName)Thunk: @convention(c) (\(cParamTypes)) -> \(ret) = { \(cParams.map { escaped($0.0) }.joined(separator: ", ")) in"
     let returnKeyword = vfunc.returnType.isEmpty ? "" : "return "
-    return [sig,
-            "    \(returnKeyword)instance(from: swiftInstancePtr).\(escaped(vfunc.swiftName))(\(callArgs))",
-            "}"]
+    var lines: [String] = []
+    lines.append("private static let \(vfunc.swiftName)Thunk: @convention(c) (\(cParamTypes)) -> \(ret) = { \(cParams.map { escaped($0.0) }.joined(separator: ", ")) in")
+    for param in cParams {
+        lines.append("    nonisolated(unsafe) let \(escaped(param.0)) = \(escaped(param.0))")
+    }
+    lines.append("    \(returnKeyword)MainActor.assumeIsolated { instance(from: swiftInstancePtr).\(escaped(vfunc.swiftName))(\(callArgs)) }")
+    lines.append("}")
+    return lines
 }
 
 private func asyncThunks(_ vfunc: RenderableVFunc, baseName: String, selfType: String) -> [String] {
@@ -322,6 +328,9 @@ private func asyncThunks(_ vfunc: RenderableVFunc, baseName: String, selfType: S
     var lines: [String] = []
     lines.append(asyncAvailability)
     lines.append("private static let \(vfunc.swiftName)AsyncThunk: @convention(c) (\(cParamTypes)) -> Void = { \(dedupedCParams.map { escaped($0.0) }.joined(separator: ", ")) in")
+    for param in dedupedCParams {
+        lines.append("    nonisolated(unsafe) let \(escaped(param.0)) = \(escaped(param.0))")
+    }
     lines.append("    let object = swiftInstancePtr")
     lines.append("    let task = g_task_new(UnsafeMutableRawPointer(object!), cancellable, callback, userData)")
     lines.append("    _Concurrency.Task { @MainActor in")
@@ -415,6 +424,7 @@ private func buildMinimalSubclassingCode(baseName: String, ctype: String, selfTy
     // Swift state; emit just the registration and instance association.
     var lines: [String] = []
     lines.append("// MARK: - \(baseName) (no overridable virtual methods)")
+    lines.append(implementationAvailability)
     lines.append("open class \(baseName) {")
     lines.append("    public let handle: \(handleType)")
     lines.append("    public init() {")
