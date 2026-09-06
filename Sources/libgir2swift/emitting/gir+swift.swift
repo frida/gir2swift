@@ -2005,7 +2005,8 @@ public func swiftCode(_ funcs: [GIR.Function]) -> (String) -> (GIR.Record) -> St
             }
 
             let e = recordProtocolExtensionCode(funcs, r, ptr: ptrName)
-            let code = instanceTypeDescriptor + p + s + classDefinition + e
+            let subclassing = buildSubclassingCode(for: r)
+            let code = instanceTypeDescriptor + p + s + classDefinition + e + (subclassing.isEmpty ? "" : "\n\n" + subclassing)
             return code
         }
     }
