@@ -387,12 +387,16 @@ private func escaped(_ name: String) -> String {
 /// Function-pointer, array, varargs, out/inout and multi-level pointer
 /// arguments are considered too exotic and cause the whole vfunc to be omitted.
 private func simpleRenderedType(_ arg: GIR.Argument) -> String? {
-    guard arg.direction == .in, !arg.isArray, !arg.varargs else { return nil }
+    guard !arg.isArray, !arg.varargs else { return nil }
     let ctype = arg.typeRef.type.ctype
     if ctype.contains("Callback") || ctype.contains("Func") { return nil }
     if arg.knownType is GIR.Callback { return nil }
     if arg.typeRef.constPointers.count > 1 { return nil }
-    return renderableType(arg.typeRef)
+    guard let type = renderableType(arg.typeRef) else { return nil }
+    // out/inout parameters are passed as a single pointer; require the rendered
+    // type to be a pointer so the thunk's ABI matches the vtable field.
+    if arg.direction != .in && !type.contains("Pointer") { return nil }
+    return type
 }
 
 /// Renders a type reference to its Swift-C form, or nil when the shape is one
