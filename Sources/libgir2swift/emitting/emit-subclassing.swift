@@ -56,7 +56,7 @@ func buildSubclassingCode(for record: GIR.Record) -> String {
     lines.append("    }")
     lines.append("")
     lines.append("    deinit {")
-    lines.append("        g_object_unref(UnsafeMutableRawPointer(handle))")
+    lines.append("        \(baseName).dissociate(self, from: handle)")
     lines.append("    }")
 
     for vfunc in vfuncs {
@@ -211,11 +211,6 @@ private func registrationMachinery(baseName: String, ctype: String, selfType: St
                                    getType: String, registeredName: String, quarkName: String,
                                    isInterface: Bool, vtableCType: String, vfuncs: [RenderableVFunc]) -> [String] {
     var lines: [String] = []
-    lines.append("private final class Box {")
-    lines.append("    let instance: \(baseName)")
-    lines.append("    init(_ instance: \(baseName)) { self.instance = instance }")
-    lines.append("}")
-    lines.append("")
     lines.append("private static let quark: GQuark = \"\(quarkName)\".withCString { g_quark_from_string($0) }")
     lines.append("")
     lines.append("private static let gtype: GType = registerType()")
@@ -280,18 +275,42 @@ private func registrationMachinery(baseName: String, ctype: String, selfType: St
     lines.append("    return UnsafeMutableRawPointer(g_object_new_with_properties(gtype, 0, nil, nil)!).assumingMemoryBound(to: \(ctype).self)")
     lines.append("}")
     lines.append("")
-    lines.append("private static func associate(_ instance: \(baseName), with handle: \(handleType)) {")
-    lines.append("    let object = UnsafeMutableRawPointer(handle).assumingMemoryBound(to: GObject.self)")
-    lines.append("    g_object_set_qdata_full(object, quark, Unmanaged.passRetained(Box(instance)).toOpaque()) { data in")
-    lines.append("        if let data { Unmanaged<Box>.fromOpaque(data).release() }")
-    lines.append("    }")
-    lines.append("}")
+    lines.append(contentsOf: toggleOwnership(baseName: baseName, handleType: handleType))
     lines.append("")
     lines.append("fileprivate static func instance(from selfPtr: \(selfType)) -> \(baseName) {")
     lines.append("    let object = UnsafeMutableRawPointer(selfPtr!).assumingMemoryBound(to: GObject.self)")
-    lines.append("    return Unmanaged<Box>.fromOpaque(g_object_get_qdata(object, quark)!).takeUnretainedValue().instance")
+    lines.append("    return Unmanaged<\(baseName)>.fromOpaque(g_object_get_qdata(object, quark)!).takeUnretainedValue()")
     lines.append("}")
     return lines
+}
+
+private func toggleOwnership(baseName: String, handleType: String) -> [String] {
+    [
+        "private static func associate(_ instance: \(baseName), with handle: \(handleType)) {",
+        "    let object = UnsafeMutableRawPointer(handle).assumingMemoryBound(to: GObject.self)",
+        "    if g_object_is_floating(object) != 0 {",
+        "        g_object_ref_sink(object)",
+        "    }",
+        "    let data = Unmanaged.passRetained(instance).toOpaque()",
+        "    g_object_set_qdata(object, quark, data)",
+        "    g_object_add_toggle_ref(object, toggleNotify, data)",
+        "    g_object_unref(object)",
+        "}",
+        "",
+        "private static func dissociate(_ instance: \(baseName), from handle: \(handleType)) {",
+        "    let object = UnsafeMutableRawPointer(handle).assumingMemoryBound(to: GObject.self)",
+        "    g_object_remove_toggle_ref(object, toggleNotify, Unmanaged.passUnretained(instance).toOpaque())",
+        "}",
+        "",
+        "private static let toggleNotify: GToggleNotify = { data, _, isLastRef in",
+        "    let instance = Unmanaged<\(baseName)>.fromOpaque(data!)",
+        "    if isLastRef != 0 {",
+        "        instance.release()",
+        "    } else {",
+        "        _ = instance.retain()",
+        "    }",
+        "}",
+    ]
 }
 
 // MARK: - @convention(c) thunks
@@ -435,9 +454,8 @@ private func buildMinimalSubclassingCode(baseName: String, ctype: String, selfTy
     lines.append("        handle = \(baseName).makeInstance()")
     lines.append("        \(baseName).associate(self, with: handle)")
     lines.append("    }")
-    lines.append("    deinit { g_object_unref(UnsafeMutableRawPointer(handle)) }")
+    lines.append("    deinit { \(baseName).dissociate(self, from: handle) }")
     lines.append("")
-    lines.append("    private final class Box { let instance: \(baseName); init(_ i: \(baseName)) { instance = i } }")
     lines.append("    private static let quark: GQuark = \"\(quarkName)\".withCString { g_quark_from_string($0) }")
     lines.append("    private static let gtype: GType = {")
     lines.append("        var info = GTypeInfo(class_size: guint16(MemoryLayout<GObjectClass>.stride), base_init: nil, base_finalize: nil, class_init: { _, _ in }, class_finalize: nil, class_data: nil, instance_size: guint16(MemoryLayout<GObject>.stride), n_preallocs: 0, instance_init: { _, _ in }, value_table: nil)")
@@ -452,10 +470,7 @@ private func buildMinimalSubclassingCode(baseName: String, ctype: String, selfTy
     }
     lines.append("    }()")
     lines.append("    private static func makeInstance() -> \(handleType) { UnsafeMutableRawPointer(g_object_new_with_properties(gtype, 0, nil, nil)!).assumingMemoryBound(to: \(ctype).self) }")
-    lines.append("    private static func associate(_ instance: \(baseName), with handle: \(handleType)) {")
-    lines.append("        let object = UnsafeMutableRawPointer(handle).assumingMemoryBound(to: GObject.self)")
-    lines.append("        g_object_set_qdata_full(object, quark, Unmanaged.passRetained(Box(instance)).toOpaque()) { data in if let data { Unmanaged<Box>.fromOpaque(data).release() } }")
-    lines.append("    }")
+    lines.append(contentsOf: toggleOwnership(baseName: baseName, handleType: handleType).map { "    " + $0 })
     lines.append("}")
     lines.append("")
     return lines.joined(separator: "\n")
