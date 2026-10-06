@@ -216,19 +216,22 @@ private func registrationMachinery(baseName: String, ctype: String, selfType: St
     lines.append("private static let gtype: GType = registerType()")
     lines.append("")
     lines.append("private static func registerType() -> GType {")
+    let parent = isInterface ? "g_type_from_name(\"GObject\")" : "\(getType)()"
+    lines.append("    let parent = \(parent)")
+    lines.append("    var parentQuery = GTypeQuery()")
+    lines.append("    g_type_query(parent, &parentQuery)")
     lines.append("    var info = GTypeInfo(")
-    lines.append("        class_size: guint16(MemoryLayout<GObjectClass>.stride),")
+    lines.append("        class_size: guint16(parentQuery.class_size),")
     lines.append("        base_init: nil, base_finalize: nil,")
     if isInterface {
         lines.append("        class_init: { _, _ in }, class_finalize: nil, class_data: nil,")
     } else {
         lines.append("        class_init: classInit, class_finalize: nil, class_data: nil,")
     }
-    lines.append("        instance_size: guint16(MemoryLayout<GObject>.stride),")
+    lines.append("        instance_size: guint16(parentQuery.instance_size),")
     lines.append("        n_preallocs: 0, instance_init: { _, _ in }, value_table: nil")
     lines.append("    )")
-    let parent = isInterface ? "g_type_from_name(\"GObject\")" : "\(getType)()"
-    lines.append("    let type = \"\(registeredName)\".withCString { g_type_register_static(\(parent), $0, &info, GTypeFlags(rawValue: 0)) }")
+    lines.append("    let type = \"\(registeredName)\".withCString { g_type_register_static(parent, $0, &info, GTypeFlags(rawValue: 0)) }")
     if isInterface {
         lines.append("    var ifaceInfo = GInterfaceInfo(interface_init: interfaceInit, interface_finalize: nil, interface_data: nil)")
         lines.append("    g_type_add_interface_static(type, \(getType)(), &ifaceInfo)")
@@ -458,15 +461,18 @@ private func buildMinimalSubclassingCode(baseName: String, ctype: String, selfTy
     lines.append("")
     lines.append("    private static let quark: GQuark = \"\(quarkName)\".withCString { g_quark_from_string($0) }")
     lines.append("    private static let gtype: GType = {")
-    lines.append("        var info = GTypeInfo(class_size: guint16(MemoryLayout<GObjectClass>.stride), base_init: nil, base_finalize: nil, class_init: { _, _ in }, class_finalize: nil, class_data: nil, instance_size: guint16(MemoryLayout<GObject>.stride), n_preallocs: 0, instance_init: { _, _ in }, value_table: nil)")
     let parent = isInterface ? "g_type_from_name(\"GObject\")" : "\(getType)()"
+    lines.append("        let parent = \(parent)")
+    lines.append("        var parentQuery = GTypeQuery()")
+    lines.append("        g_type_query(parent, &parentQuery)")
+    lines.append("        var info = GTypeInfo(class_size: guint16(parentQuery.class_size), base_init: nil, base_finalize: nil, class_init: { _, _ in }, class_finalize: nil, class_data: nil, instance_size: guint16(parentQuery.instance_size), n_preallocs: 0, instance_init: { _, _ in }, value_table: nil)")
     if isInterface {
-        lines.append("        let type = \"\(registeredName)\".withCString { g_type_register_static(\(parent), $0, &info, GTypeFlags(rawValue: 0)) }")
+        lines.append("        let type = \"\(registeredName)\".withCString { g_type_register_static(parent, $0, &info, GTypeFlags(rawValue: 0)) }")
         lines.append("        var ifaceInfo = GInterfaceInfo(interface_init: { _, _ in }, interface_finalize: nil, interface_data: nil)")
         lines.append("        g_type_add_interface_static(type, \(getType)(), &ifaceInfo)")
         lines.append("        return type")
     } else {
-        lines.append("        return \"\(registeredName)\".withCString { g_type_register_static(\(parent), $0, &info, GTypeFlags(rawValue: 0)) }")
+        lines.append("        return \"\(registeredName)\".withCString { g_type_register_static(parent, $0, &info, GTypeFlags(rawValue: 0)) }")
     }
     lines.append("    }()")
     lines.append("    private static func makeInstance() -> \(handleType) { UnsafeMutableRawPointer(g_object_new_with_properties(gtype, 0, nil, nil)!).assumingMemoryBound(to: \(ctype).self) }")
